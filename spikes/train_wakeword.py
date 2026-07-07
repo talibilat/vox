@@ -213,6 +213,8 @@ def stage_train(workdir):
         head,
         torch.zeros(1, WINDOW_FRAMES, 96),
         onnx_path,
+        dynamo=False,
+        external_data=False,
         input_names=["onnx::Flatten_0"],
         output_names=["result"],
         dynamic_axes={"onnx::Flatten_0": {0: "batch"}},
