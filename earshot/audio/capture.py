@@ -8,6 +8,7 @@ for a real microphone.
 from __future__ import annotations
 
 import queue
+import threading
 from collections.abc import Iterator
 
 import numpy as np
@@ -40,17 +41,34 @@ class MicSource:
         self._device = device
         self._queue: queue.Queue[np.ndarray] = queue.Queue(maxsize=64)
         self._stream = None
+        self._stop = threading.Event()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _enqueue_frame(self, indata) -> None:
+        frame = np.frombuffer(bytes(indata), dtype=np.int16).copy()
+        try:
+            self._queue.put_nowait(frame)
+        except queue.Full:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._queue.put_nowait(frame)
+            except queue.Full:
+                pass
 
     def frames(self) -> Iterator[np.ndarray]:
         import sounddevice
 
+        self._stop.clear()
+
         def _on_audio(indata, _frames, _time, status):
             if status:
                 pass  # over/underruns are survivable; never raise in the callback
-            try:
-                self._queue.put_nowait(np.frombuffer(bytes(indata), dtype=np.int16).copy())
-            except queue.Full:
-                pass  # drop the frame rather than stall the audio thread
+            self._enqueue_frame(indata)
 
         self._stream = sounddevice.RawInputStream(
             samplerate=SAMPLE_RATE,
@@ -61,5 +79,8 @@ class MicSource:
             callback=_on_audio,
         )
         with self._stream:
-            while True:
-                yield self._queue.get()
+            while not self._stop.is_set():
+                try:
+                    yield self._queue.get(timeout=0.1)
+                except queue.Empty:
+                    pass

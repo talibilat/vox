@@ -52,6 +52,9 @@ class InputPipeline:
 
     def stop(self) -> None:
         self._stop.set()
+        stop_source = getattr(self._source, "stop", None)
+        if callable(stop_source):
+            stop_source()
 
     def run(self) -> None:
         """Blocking loop; call stop() (from another thread) to exit."""

@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -180,3 +181,41 @@ def test_config_error_exit_code(tmp_path):
     assert result.returncode == 2
     assert "config error" in result.stderr
     assert "stt.backend" in result.stderr
+
+
+def test_daemon_stops_when_input_pipeline_thread_fails(monkeypatch, daemon_config):
+    import earshot.input
+
+    pipeline_failed = threading.Event()
+    stopped = threading.Event()
+
+    class FailingPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self):
+            pipeline_failed.set()
+            raise RuntimeError("microphone failed")
+
+        def stop(self):
+            stopped.set()
+
+    sleep_calls_after_failure = 0
+
+    def sleep(_seconds):
+        nonlocal sleep_calls_after_failure
+        if pipeline_failed.wait(timeout=0.01):
+            sleep_calls_after_failure += 1
+        if sleep_calls_after_failure > 5:
+            raise AssertionError("daemon kept running after input pipeline failure")
+
+    daemon_config.wake_word.model_path = "model.onnx"
+    monkeypatch.setattr(earshot.input, "InputPipeline", FailingPipeline)
+    monkeypatch.setattr(daemon.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+
+    with pytest.raises(RuntimeError, match="input pipeline failed"):
+        daemon.run(daemon_config)
+
+    assert stopped.is_set()
+    assert not Path(daemon_config.daemon.pid_file).exists()

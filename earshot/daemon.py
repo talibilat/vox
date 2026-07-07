@@ -181,13 +181,23 @@ def run(config: Config) -> None:
 
     pipeline = None
     pipeline_thread = None
+    pipeline_error: BaseException | None = None
     if config.wake_word.model_path:
         from earshot.input import InputPipeline
 
         # Transcript consumption is the agent loop's job (#8); until it
         # lands, transcripts are logged so the input path is observable.
         pipeline = InputPipeline(config, on_transcript=lambda text: logger.info("heard: %s", text))
-        pipeline_thread = threading.Thread(target=pipeline.run, daemon=True, name="input-pipeline")
+
+        def _run_pipeline() -> None:
+            nonlocal pipeline_error
+            try:
+                pipeline.run()
+            except Exception as exc:
+                pipeline_error = exc
+                logger.exception("input pipeline failed")
+
+        pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="input-pipeline")
         pipeline_thread.start()
         logger.info("input pipeline listening (wake word: %r)", config.wake_word.phrase)
     else:
@@ -197,6 +207,8 @@ def run(config: Config) -> None:
         # The speech-output pipeline (#6), barge-in (#7), and agent
         # lifecycle (#8, #11) plug in here.
         while not stopping:
+            if pipeline_error is not None:
+                raise RuntimeError("input pipeline failed") from pipeline_error
             time.sleep(0.2)
     finally:
         if pipeline is not None:
