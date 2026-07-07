@@ -46,12 +46,15 @@ class InterruptibleVoiceLoop:
     def __init__(
         self,
         config: Config,
-        adapter: AgentAdapter,
+        handler,
         output: OutputPipeline,
         source=None,
         stt: SttBackend | None = None,
         restart: Callable[[], bool] | None = None,
     ):
+        """`handler` consumes transcripts: anything with handle_transcript()
+        and say() (a per-agent ConversationLoop, or the multi-agent Router).
+        An AgentAdapter is also accepted and wrapped for convenience."""
         if not config.wake_word.model_path:
             raise ValueError("wake_word.model_path is not set; the voice loop needs a model")
         if source is None:
@@ -60,7 +63,9 @@ class InterruptibleVoiceLoop:
             source = MicSource()
         self._source = source
         self._output = output
-        self._conversation = ConversationLoop(adapter, output, restart=restart)
+        if isinstance(handler, AgentAdapter):
+            handler = ConversationLoop(handler, output, restart=restart)
+        self._conversation = handler
         self._wake = WakeWordDetector(
             model_path=config.wake_word.model_path,
             sensitivity=config.wake_word.sensitivity,
