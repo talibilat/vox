@@ -1,8 +1,8 @@
 """Daemon lifecycle: start, stop, status, and the foreground run loop.
 
-The daemon is the long-lived process that will own the audio pipeline and
-every agent process (later issues). This module only implements lifecycle
-plumbing: PID-file management, detached start, clean stop, and logging.
+The daemon is the long-lived process that owns lifecycle plumbing, the audio
+pipeline, and the configured Phase 1 agent process when the voice loop is
+enabled.
 """
 
 from __future__ import annotations
@@ -182,12 +182,20 @@ def run(config: Config) -> None:
     pipeline = None
     pipeline_thread = None
     pipeline_error: BaseException | None = None
+    adapter = None
     if config.wake_word.model_path:
+        from earshot.agents import create_adapter, first_agent
         from earshot.input import InputPipeline
+        from earshot.loop import ConversationLoop
+        from earshot.output import OutputPipeline
 
-        # Transcript consumption is the agent loop's job (#8); until it
-        # lands, transcripts are logged so the input path is observable.
-        pipeline = InputPipeline(config, on_transcript=lambda text: logger.info("heard: %s", text))
+        agent_name, agent_config = first_agent(config)
+        adapter = create_adapter(agent_name, agent_config)
+        adapter.start()
+        logger.info("agent %s (%s) is up", agent_name, agent_config.harness)
+
+        loop = ConversationLoop(adapter, OutputPipeline(config))
+        pipeline = InputPipeline(config, on_transcript=loop.handle_transcript)
 
         def _run_pipeline() -> None:
             nonlocal pipeline_error
@@ -201,11 +209,10 @@ def run(config: Config) -> None:
         pipeline_thread.start()
         logger.info("input pipeline listening (wake word: %r)", config.wake_word.phrase)
     else:
-        logger.info("input pipeline disabled (wake_word.model_path is not set)")
+        logger.info("voice loop disabled (wake_word.model_path is not set)")
 
     try:
-        # The speech-output pipeline (#6), barge-in (#7), and agent
-        # lifecycle (#8, #11) plug in here.
+        # Barge-in (#7) and multi-agent lifecycle (#11) plug in here.
         while not stopping:
             if pipeline_error is not None:
                 raise RuntimeError("input pipeline failed") from pipeline_error
@@ -214,6 +221,8 @@ def run(config: Config) -> None:
         if pipeline is not None:
             pipeline.stop()
             pipeline_thread.join(timeout=5)
+        if adapter is not None:
+            adapter.stop()
         # Only remove the PID file this process owns; never clobber a file
         # that another daemon has since written.
         try:

@@ -184,10 +184,34 @@ def test_config_error_exit_code(tmp_path):
 
 
 def test_daemon_stops_when_input_pipeline_thread_fails(monkeypatch, daemon_config):
+    import earshot.agents
     import earshot.input
 
     pipeline_failed = threading.Event()
     stopped = threading.Event()
+    agent_stopped = threading.Event()
+
+    class FakeAdapter:
+        alive = True
+
+        def start(self):
+            pass
+
+        def stop(self):
+            agent_stopped.set()
+
+        def send(self, _prompt):
+            return iter(())
+
+    monkeypatch.setattr(earshot.agents, "create_adapter", lambda _name, _cfg: FakeAdapter())
+
+    import earshot.output
+
+    class FakeOutputPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(earshot.output, "OutputPipeline", FakeOutputPipeline)
 
     class FailingPipeline:
         def __init__(self, *_args, **_kwargs):
@@ -218,4 +242,5 @@ def test_daemon_stops_when_input_pipeline_thread_fails(monkeypatch, daemon_confi
         daemon.run(daemon_config)
 
     assert stopped.is_set()
+    assert agent_stopped.is_set(), "the owned agent process was not shut down"
     assert not Path(daemon_config.daemon.pid_file).exists()

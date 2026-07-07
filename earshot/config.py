@@ -1,10 +1,10 @@
 """Configuration schema, loading, and validation for Earshot.
 
-The full schema is defined here, including fields that later phases consume
-(agents map for the multi-agent conductor, barge-in settings for the
-interrupt path), so pipeline issues can build in parallel without editing
-this module. Every field is a dataclass attribute with a default; a config
-file only needs to override what it changes.
+The full schema is defined here, including fields consumed by the Phase 1
+opencode voice loop and fields that later phases consume (multi-agent
+conductor settings, barge-in settings for the interrupt path). Every field is
+a dataclass attribute with a default; a config file only needs to override what
+it changes.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ HARNESSES = ("opencode", "claude-code", "codex")
 BACKENDS = ("local", "api")
 TTS_ENGINES = ("piper", "kokoro")
 CODE_BLOCK_MODES = ("summarize", "skip", "read")
+DEFAULT_OPENCODE_MODEL = "opencode/deepseek-v4-flash-free"
 
 
 class ConfigError(Exception):
@@ -82,8 +83,9 @@ class TtsConfig:
 @dataclass
 class AgentConfig:
     harness: str = "opencode"
-    command: str | None = None  # explicit launch command override
+    command: str | None = None  # explicit opencode-compatible serve command override
     workdir: str = "~"
+    model: str | None = DEFAULT_OPENCODE_MODEL  # "provider/model-id"
     tmux_pane: str | None = None  # only for a harness on the tmux fallback path
 
 
@@ -192,6 +194,14 @@ def _check_str(value: object, path: str, optional: bool = False) -> None:
         _fail(path, f"expected a non-empty string, got {value!r}")
 
 
+def _check_model_pin(value: object, path: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        _fail(path, f"expected a non-empty string, got {value!r}")
+    provider, separator, model_id = value.partition("/")
+    if separator != "/" or not provider.strip() or not model_id.strip() or "/" in model_id:
+        _fail(path, f"expected provider/model-id, got {value!r}")
+
+
 def validate(config: Config) -> Config:
     """Validate every field; raise ConfigError with the key path on failure."""
     _check_str(config.wake_word.phrase, "wake_word.phrase")
@@ -235,6 +245,10 @@ def validate(config: Config) -> Config:
         _check_enum(agent.harness, HARNESSES, f"agents.{name}.harness")
         _check_str(agent.command, f"agents.{name}.command", optional=True)
         _check_str(agent.workdir, f"agents.{name}.workdir")
+        if agent.harness == "opencode":
+            _check_model_pin(agent.model, f"agents.{name}.model")
+        else:
+            _check_str(agent.model, f"agents.{name}.model", optional=True)
         _check_str(agent.tmux_pane, f"agents.{name}.tmux_pane", optional=True)
 
     _check_range(config.barge_in.vad_threshold, 0.0, 1.0, "barge_in.vad_threshold")
@@ -307,9 +321,10 @@ code_blocks: summarize      # fenced code blocks: summarize | skip | read
 # Spoken agent name -> how to reach that agent.
 agents:
   main:
-    harness: opencode       # opencode | claude-code | codex
-    command: null           # optional explicit launch command
+    harness: opencode       # opencode works today; claude-code/codex are reserved
+    command: null           # optional opencode-compatible serve command; --port is appended
     workdir: "~"
+    model: {model}          # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:
@@ -328,5 +343,6 @@ def write_default(config_path: Path) -> None:
         DEFAULT_CONFIG_TEMPLATE.format(
             log_file="~/.local/state/earshot/earshot.log",
             pid_file="~/.local/state/earshot/earshot.pid",
+            model=DEFAULT_OPENCODE_MODEL,
         )
     )

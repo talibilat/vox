@@ -5,8 +5,8 @@ Earshot is a voice-to-voice control project for terminal coding agents.
 ## Earshot Scaffold
 
 The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
-The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, and the first speech-output pipeline: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, and interruptible speaker playback.
-Agent adapters land in later phase issues.
+The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 opencode-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, streamed agent responses, and interruptible speaker playback.
+Claude Code and codex adapters land in later phase issues.
 
 Install for development with:
 
@@ -24,11 +24,14 @@ earshot stop
 
 Use `earshot start --foreground` for a foreground development run.
 Use `earshot --config PATH ...` to point at a non-default config file.
-Audio input starts only when `wake_word.model_path` points at a trained openWakeWord `.onnx` model; without it, the daemon logs that the input pipeline is disabled.
+The voice loop starts only when `wake_word.model_path` points at a trained openWakeWord `.onnx` model; without it, the daemon logs that the voice loop is disabled.
 The committed feasibility model is `spikes/models/hey_earshot.onnx`; it is useful for development but not production-ready.
 
 On first run without `--config`, Earshot creates `~/.config/earshot/config.yaml` from the same template committed as `config.example.yaml`.
 Every config key is optional, unknown keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, barge-in, and daemon paths.
+For the Phase 1 voice loop, configure the first agent under `agents` with `harness: opencode`, an `agents.<name>.workdir`, and a pinned `agents.<name>.model` in `provider/model-id` form; Earshot owns an `opencode serve` process for that agent and speaks streamed responses.
+Only `opencode` is implemented today; `claude-code` and `codex` remain accepted config values for later adapters but raise at runtime.
+If an agent fails mid-turn, Earshot speaks the failure; if the agent process died, Earshot announces one automatic restart, starts a fresh session, and retries the request once.
 Local STT is implemented with faster-whisper, and local TTS is implemented with Piper.
 The API STT and TTS backends are reserved for issue #10 and raise until that lands; Kokoro remains a reserved local TTS engine and also raises today.
 Speech output converts streamed Markdown to speakable text sentence-by-sentence; `code_blocks` controls whether fenced code blocks are summarized, skipped, or read aloud.
@@ -39,6 +42,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-01 repo scaffold notes](docs/tickets/P1-01.md)
 - [P1-02 audio input notes](docs/tickets/P1-02.md)
 - [P1-03 speech output notes](docs/tickets/P1-03.md)
+- [P1-05 agent adapter notes](docs/tickets/P1-05.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
 - [P0-02 process notes](docs/tickets/P0-02.md)
@@ -49,6 +53,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-01 repo scaffold notes](docs/tickets/P1-01.md) record the package, daemon, config schema, and validation work.
 - [P1-02 audio input notes](docs/tickets/P1-02.md) record the wake-word, endpointing, microphone, and local STT pipeline work.
 - [P1-03 speech output notes](docs/tickets/P1-03.md) record the markdown-to-speech, local Piper TTS, and interruptible playback work.
+- [P1-05 agent adapter notes](docs/tickets/P1-05.md) record the opencode adapter, single-agent voice loop, and daemon agent-process ownership work.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
 - [P0-01 VoiceMode notes](docs/voicemode-notes.md) record the VoiceMode design review and local Claude Code MCP smoke test.
@@ -62,3 +67,4 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P0-03 process notes](docs/tickets/P0-03.md)
 - [P1-02 process notes](docs/tickets/P1-02.md)
 - [P1-03 process notes](docs/tickets/P1-03.md)
+- [P1-05 process notes](docs/tickets/P1-05.md)
