@@ -57,6 +57,12 @@ def _scale(audio, peak):
     return (audio.astype(np.float32) * (peak / peak_now)).astype(np.int16)
 
 
+def _fit_samples(audio, sample_count):
+    if len(audio) >= sample_count:
+        return audio[:sample_count]
+    return np.concatenate([audio, np.zeros(sample_count - len(audio), dtype=np.int16)])
+
+
 def stage_gen(workdir):
     rng = np.random.default_rng(7)
     os.makedirs(workdir, exist_ok=True)
@@ -80,7 +86,7 @@ def stage_gen(workdir):
         rate=170,
     )
     speech = read_wav(f"{workdir}/s3_speech_full.wav")
-    write_wav(f"{workdir}/s3_conversation.wav", _scale(speech, 2500))  # ~-22dBFS background
+    write_wav(f"{workdir}/s3_conversation.wav", _fit_samples(_scale(speech, 2500), SR * 30))
 
     # S4 keyboard: impulse clicks at typing cadence.
     keys = np.zeros(SR * 30)
