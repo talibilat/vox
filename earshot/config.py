@@ -84,6 +84,7 @@ class AgentConfig:
     harness: str = "opencode"
     command: str | None = None  # explicit launch command override
     workdir: str = "~"
+    model: str | None = None  # "provider/model-id"; None uses the harness default
     tmux_pane: str | None = None  # only for a harness on the tmux fallback path
 
 
@@ -235,6 +236,7 @@ def validate(config: Config) -> Config:
         _check_enum(agent.harness, HARNESSES, f"agents.{name}.harness")
         _check_str(agent.command, f"agents.{name}.command", optional=True)
         _check_str(agent.workdir, f"agents.{name}.workdir")
+        _check_str(agent.model, f"agents.{name}.model", optional=True)
         _check_str(agent.tmux_pane, f"agents.{name}.tmux_pane", optional=True)
 
     _check_range(config.barge_in.vad_threshold, 0.0, 1.0, "barge_in.vad_threshold")
@@ -310,6 +312,7 @@ agents:
     harness: opencode       # opencode | claude-code | codex
     command: null           # optional explicit launch command
     workdir: "~"
+    model: null             # "provider/model-id"; null uses the harness default
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:

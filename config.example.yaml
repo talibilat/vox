@@ -37,6 +37,7 @@ agents:
     harness: opencode       # opencode | claude-code | codex
     command: null           # optional explicit launch command
     workdir: "~"
+    model: null             # "provider/model-id"; null uses the harness default
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:
