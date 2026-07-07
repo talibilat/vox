@@ -29,7 +29,7 @@ graph TD
         I11["#11 Conductor core: config + fleet lifecycle"]
         I12["#12 Voice addressing: names, routing, active agent"]
         I13["#13 Output watchers, idle detection, agent status"]
-        I14["#14 tmux fallback transport"]
+        I14["#14 tmux fallback transport (dormant contingency)"]
     end
 
     subgraph Phase3["Phase 3 - Polish & release"]
@@ -79,11 +79,12 @@ A track cannot start until its gate is fully merged.
 | 3 | #8, #10 | #5 and #6 merged (#8 also needs #2) | Agent adapter + loop (`earshot/agents/`, `loop.py`, `daemon.py`) vs API voice backends (`stt/api_openai.py`, `tts/api_openai.py`). No overlap. |
 | 4 | #7, #9 | #8 merged | Barge-in touches audio and loop internals; the two new adapters touch only `earshot/agents/`. No overlap. |
 | 5 | #11 (solo) | #9 merged (#10 should also be merged first; both edit `earshot/config.py`) | Rewires the daemon and extends config; too central to share with anything. |
-| 6 | #12, #13, #14 | #11 merged | Addressing/routing vs watchers/status vs tmux adapter live in disjoint files. #12 and #13 must agree the read/status interface signatures up front. |
+| 6 | #12, #13, #14 | #11 merged | Addressing/routing vs watchers/status vs tmux adapter live in disjoint files. #12 and #13 must agree the read/status interface signatures up front; #14 stays dormant unless native harness surfaces regress. |
 | 7 | #15, then #16 | All of Phase 1 + 2 merged | Sequential: release documents the numbers that tuning produces. |
 
 The critical path is: Track 1 -> #5/#6 -> #8 -> #9 -> #11 -> Phase 2 fan-out -> #15 -> #16.
 P0-02 proved that opencode status should derive from `session.next.step.ended` with `finish: "stop"`; #13 must not rely on `session.idle`, which exists in the schema but was not emitted in the spike.
+P1-06 proved opencode, Claude Code, and codex all pass the native adapter contract, so #14 remains a fallback contingency rather than required Phase 2 work at current harness versions.
 P0-03 chose faster-whisper `base.en` as the default STT model with `tiny.en` as the low-latency option for #5.
 It chose Piper `en_US-lessac-medium` as the default TTS engine for #6; Kokoro should remain optional and sentence-at-a-time only.
 It showed Silero VAD has enough headroom for the 200ms barge-in target in #7, but #15 still owns real-microphone noise tuning.

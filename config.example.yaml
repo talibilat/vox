@@ -36,8 +36,8 @@ code_blocks: summarize      # fenced code blocks: summarize | skip | read
 # Spoken agent name -> how to reach that agent.
 agents:
   main:
-    harness: opencode       # opencode works today; claude-code/codex are reserved
-    command: null           # optional opencode-compatible serve command; --port is appended
+    harness: opencode       # opencode | claude-code | codex
+    command: null           # optional command: opencode serve, claude --print, codex app-server
     workdir: "~"
     model: opencode/deepseek-v4-flash-free          # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path

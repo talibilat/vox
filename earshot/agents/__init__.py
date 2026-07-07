@@ -5,15 +5,22 @@ from earshot.config import AgentConfig, Config
 
 
 def create_adapter(name: str, agent_config: AgentConfig) -> AgentAdapter:
-    """Instantiate the adapter for one configured agent."""
+    """Instantiate the adapter for one configured agent (the registry keyed
+    by the config `harness` field)."""
     if agent_config.harness == "opencode":
         from earshot.agents.opencode import OpencodeAdapter
 
         return OpencodeAdapter(name, agent_config)
+    if agent_config.harness == "claude-code":
+        from earshot.agents.claude_code import ClaudeCodeAdapter
+
+        return ClaudeCodeAdapter(name, agent_config)
+    if agent_config.harness == "codex":
+        from earshot.agents.codex import CodexAdapter
+
+        return CodexAdapter(name, agent_config)
     # config validation guarantees harness is one of the known three
-    raise NotImplementedError(
-        f"the {agent_config.harness!r} adapter is issue #9; only 'opencode' works today"
-    )
+    raise NotImplementedError(f"unknown harness {agent_config.harness!r}")
 
 
 def first_agent(config: Config) -> tuple[str, AgentConfig]:
