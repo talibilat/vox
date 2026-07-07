@@ -195,7 +195,7 @@ class TestMultiAgentConfig:
 
     def test_short_name_warns(self, caplog):
         config = Config()
-        config.agents = {"rex": AgentConfig()}
+        config.agents = {"rex": AgentConfig(), "olivia": AgentConfig()}
         with caplog.at_level("WARNING", logger="earshot.config"):
             validate(config)
         assert any("short for speech recognition" in r.message for r in caplog.records)

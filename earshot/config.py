@@ -315,7 +315,11 @@ def validate(config: Config) -> Config:
             _check_str(agent.model, f"agents.{name}.model", optional=True)
         _check_bool(agent.restart_on_death, f"agents.{name}.restart_on_death")
         _check_str(agent.tmux_pane, f"agents.{name}.tmux_pane", optional=True)
-    _warn_phonetically_risky_names(list(config.agents))
+    if len(config.agents) > 1:
+        # Spoken names only reach STT with two or more agents (a single
+        # agent gets verbatim pass-through routing), so a lone default
+        # agent does not nag about its own name.
+        _warn_phonetically_risky_names(list(config.agents))
 
     _check_range(config.barge_in.vad_threshold, 0.0, 1.0, "barge_in.vad_threshold")
     _check_str(config.barge_in.interrupt_hotkey, "barge_in.interrupt_hotkey", optional=True)
