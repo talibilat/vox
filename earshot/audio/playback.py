@@ -9,36 +9,77 @@ synthesis are dropped on the floor.
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 from collections.abc import Iterator
 
 import numpy as np
 
-# Slice size for sink writes, in samples. At 22050Hz, 1024 samples is ~46ms,
-# which bounds how long a stop can lag behind the flag check.
-_SLICE = 1024
+logger = logging.getLogger("earshot.playback")
+
+# Slice size for sink writes, in samples. At 22050Hz, 512 samples is ~23ms,
+# which bounds how long a stop can lag behind the flag check. Kept small
+# because it spends directly from the barge-in path's 200ms budget.
+_SLICE = 512
 
 
 class SounddeviceSink:
-    """Speaker output via sounddevice (lazy import, like MicSource)."""
+    """Speaker output via sounddevice (lazy import, like MicSource).
+
+    All stream operations are serialized by a lock: `abort()` is called from
+    the interrupting thread while the playback worker may be blocked inside
+    `write()`, and concurrent PortAudio calls on one stream deadlock
+    intermittently on macOS. The lock bounds abort's extra wait to one
+    in-flight slice (~23ms), which the barge-in budget absorbs.
+    """
 
     def __init__(self, sample_rate: int):
+        self._sample_rate = sample_rate
+        self._lock = threading.RLock()
+        self._stream = self._open()
+
+    def _open(self):
         import sounddevice
 
-        self._stream = sounddevice.OutputStream(samplerate=sample_rate, channels=1, dtype="int16")
-        self._stream.start()
+        stream = sounddevice.OutputStream(samplerate=self._sample_rate, channels=1, dtype="int16")
+        stream.start()
+        return stream
 
     def write(self, samples: np.ndarray) -> None:
-        self._stream.write(samples.reshape(-1, 1))
+        with self._lock:
+            try:
+                self._stream.write(samples.reshape(-1, 1))
+            except Exception:
+                # CoreAudio can invalidate a stream out from under us;
+                # reopen once and retry.
+                self._reopen()
+                self._stream.write(samples.reshape(-1, 1))
 
     def abort(self) -> None:
-        self._stream.abort()  # drop buffered audio immediately
-        self._stream.start()
+        # Reusing an aborted stream is unreliable on macOS (observed
+        # PaErrorCode -9986 on the next write), so drop the buffered audio
+        # by replacing the stream entirely, synchronously; the swap measures
+        # ~130ms median on target hardware, within the barge-in budget.
+        with self._lock:
+            self._reopen()
+
+    def _reopen(self) -> None:
+        with self._lock:
+            try:
+                self._stream.abort()
+                self._stream.close()
+            except Exception:
+                pass  # the old stream is already unusable
+            self._stream = self._open()
 
     def close(self) -> None:
-        self._stream.abort()
-        self._stream.close()
+        with self._lock:
+            try:
+                self._stream.abort()
+                self._stream.close()
+            except Exception:
+                pass
 
 
 class Player:
@@ -112,6 +153,13 @@ class Player:
             for start in range(0, len(chunk), _SLICE):
                 if self._interrupt.is_set():
                     break
-                self._sink.write(chunk[start : start + _SLICE])
+                try:
+                    self._sink.write(chunk[start : start + _SLICE])
+                except Exception:
+                    # The worker must survive sink failures: a dead worker
+                    # would leave every stop_and_flush waiting on its idle
+                    # timeout. Drop the rest of this chunk and carry on.
+                    logger.exception("audio sink write failed; dropping chunk")
+                    break
             if self._queue.empty():
                 self._idle.set()

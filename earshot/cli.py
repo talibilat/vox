@@ -31,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("stop", help="stop the daemon")
     sub.add_parser("status", help="show whether the daemon is running")
+    sub.add_parser(
+        "interrupt",
+        help="stop the agent's speech now (push-to-interrupt escape hatch); "
+        "bind this command to a system hotkey for one-keystroke barge-in",
+    )
     sub.add_parser("run", help=argparse.SUPPRESS)  # internal: detached child entrypoint
     return parser
 
@@ -59,6 +64,9 @@ def main(argv: list[str] | None = None) -> int:
                 print("earshot daemon is not running")
                 return 1
             print(f"earshot daemon is running (pid {pid})")
+        elif args.command == "interrupt":
+            pid = daemon.interrupt(config)
+            print(f"interrupt sent to earshot daemon (pid {pid})")
         elif args.command == "run":
             daemon.run(config)
     except RuntimeError as e:

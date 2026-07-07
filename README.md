@@ -5,7 +5,7 @@ Earshot is a voice-to-voice control project for terminal coding agents.
 ## Earshot Scaffold
 
 The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
-The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 opencode-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, streamed agent responses, and interruptible speaker playback.
+The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 opencode-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, streamed agent responses, and barge-in interruption while the agent is speaking.
 Claude Code and codex adapters land in later phase issues.
 
 Install for development with:
@@ -19,6 +19,7 @@ Run the daemon lifecycle commands with:
 ```sh
 earshot start
 earshot status
+earshot interrupt
 earshot stop
 ```
 
@@ -26,6 +27,8 @@ Use `earshot start --foreground` for a foreground development run.
 Use `earshot --config PATH ...` to point at a non-default config file.
 The voice loop starts only when `wake_word.model_path` points at a trained openWakeWord `.onnx` model; without it, the daemon logs that the voice loop is disabled.
 The committed feasibility model is `spikes/models/hey_earshot.onnx`; it is useful for development but not production-ready.
+While the daemon is responding, speaking over playback interrupts the agent, stops synthesis and speaker output, and records the interruption as the next command without requiring the wake word again.
+Use `earshot interrupt` as the push-to-interrupt escape hatch; bind that command in your OS or launcher if you want a one-keystroke hotkey.
 
 On first run without `--config`, Earshot creates `~/.config/earshot/config.yaml` from the same template committed as `config.example.yaml`.
 Every config key is optional, unknown keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, barge-in, and daemon paths.
@@ -42,6 +45,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-01 repo scaffold notes](docs/tickets/P1-01.md)
 - [P1-02 audio input notes](docs/tickets/P1-02.md)
 - [P1-03 speech output notes](docs/tickets/P1-03.md)
+- [P1-04 barge-in notes](docs/tickets/P1-04.md)
 - [P1-05 agent adapter notes](docs/tickets/P1-05.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
@@ -53,6 +57,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-01 repo scaffold notes](docs/tickets/P1-01.md) record the package, daemon, config schema, and validation work.
 - [P1-02 audio input notes](docs/tickets/P1-02.md) record the wake-word, endpointing, microphone, and local STT pipeline work.
 - [P1-03 speech output notes](docs/tickets/P1-03.md) record the markdown-to-speech, local Piper TTS, and interruptible playback work.
+- [P1-04 barge-in notes](docs/tickets/P1-04.md) record the VAD interruption loop, push-to-interrupt command, and target-hardware latency validation work.
 - [P1-05 agent adapter notes](docs/tickets/P1-05.md) record the opencode adapter, single-agent voice loop, and daemon agent-process ownership work.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
@@ -67,4 +72,5 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P0-03 process notes](docs/tickets/P0-03.md)
 - [P1-02 process notes](docs/tickets/P1-02.md)
 - [P1-03 process notes](docs/tickets/P1-03.md)
+- [P1-04 process notes](docs/tickets/P1-04.md)
 - [P1-05 process notes](docs/tickets/P1-05.md)

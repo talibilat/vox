@@ -190,6 +190,28 @@ class TestOutputPipeline:
         time.sleep(0.05)
         assert sink.total_samples() == settled
 
+    def test_new_stream_does_not_uncancel_interrupted_stream(self):
+        pipeline, tts, _sink = self.make()
+        old_waiting = threading.Event()
+        resume_old = threading.Event()
+
+        def old_stream():
+            yield "Old first sentence. "
+            old_waiting.set()
+            resume_old.wait(timeout=5)
+            yield "Old stale sentence. "
+
+        old_thread = threading.Thread(target=lambda: pipeline.speak_stream(old_stream()))
+        old_thread.start()
+        assert old_waiting.wait(timeout=5)
+
+        pipeline.cancel_current()
+        pipeline.speak_stream(["New response sentence. "])
+        resume_old.set()
+        old_thread.join(timeout=5)
+
+        assert "Old stale sentence." not in tts.calls
+
 
 def test_create_backend_rejects_unimplemented_local_engine():
     config = Config()

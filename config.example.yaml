@@ -42,7 +42,7 @@ agents:
 
 barge_in:
   vad_threshold: 0.5        # 0..1, Silero VAD speech probability
-  interrupt_hotkey: null    # e.g. ctrl+space, push-to-interrupt escape hatch
+  interrupt_hotkey: null    # optional label; bind `earshot interrupt` outside Earshot
 
 daemon:
   log_file: ~/.local/state/earshot/earshot.log
