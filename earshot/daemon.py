@@ -129,6 +129,15 @@ def start(config: Config, config_path: str | None) -> int:
     raise RuntimeError(f"daemon did not report ready within 5s; see {log_file}")
 
 
+def interrupt(config: Config) -> int:
+    """Send the push-to-interrupt signal (SIGUSR1) to the running daemon."""
+    pid = read_pid(config)
+    if pid is None:
+        raise RuntimeError("daemon is not running")
+    os.kill(pid, signal.SIGUSR1)
+    return pid
+
+
 def stop(config: Config) -> int:
     """SIGTERM the daemon and wait for it to exit. Returns the stopped PID."""
     pid = read_pid(config)
@@ -183,10 +192,14 @@ def run(config: Config) -> None:
     pipeline_thread = None
     pipeline_error: BaseException | None = None
     adapter = None
+    # SIGUSR1 is the push-to-interrupt escape hatch (`earshot interrupt`).
+    # Registered unconditionally and BEFORE the voice loop exists: the
+    # default SIGUSR1 action would otherwise terminate a daemon that is
+    # running without a wake model.
+    signal.signal(signal.SIGUSR1, lambda *_: pipeline and pipeline.request_interrupt())
     if config.wake_word.model_path:
         from earshot.agents import create_adapter, first_agent
-        from earshot.input import InputPipeline
-        from earshot.loop import ConversationLoop
+        from earshot.barge import InterruptibleVoiceLoop
         from earshot.output import OutputPipeline
 
         agent_name, agent_config = first_agent(config)
@@ -194,8 +207,7 @@ def run(config: Config) -> None:
         adapter.start()
         logger.info("agent %s (%s) is up", agent_name, agent_config.harness)
 
-        loop = ConversationLoop(adapter, OutputPipeline(config))
-        pipeline = InputPipeline(config, on_transcript=loop.handle_transcript)
+        pipeline = InterruptibleVoiceLoop(config, adapter, OutputPipeline(config))
 
         def _run_pipeline() -> None:
             nonlocal pipeline_error
@@ -203,16 +215,16 @@ def run(config: Config) -> None:
                 pipeline.run()
             except Exception as exc:
                 pipeline_error = exc
-                logger.exception("input pipeline failed")
+                logger.exception("voice loop failed")
 
-        pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="input-pipeline")
+        pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="voice-loop")
         pipeline_thread.start()
-        logger.info("input pipeline listening (wake word: %r)", config.wake_word.phrase)
+        logger.info("voice loop listening (wake word: %r)", config.wake_word.phrase)
     else:
         logger.info("voice loop disabled (wake_word.model_path is not set)")
 
     try:
-        # Barge-in (#7) and multi-agent lifecycle (#11) plug in here.
+        # Multi-agent lifecycle (#11) plugs in here.
         while not stopping:
             if pipeline_error is not None:
                 raise RuntimeError("input pipeline failed") from pipeline_error

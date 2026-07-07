@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from collections.abc import Iterable
 
 from earshot.config import Config
@@ -180,6 +181,7 @@ class OutputPipeline:
 
             player = Player(SounddeviceSink(self._tts.sample_rate))
         self._player = player
+        self._cancel = threading.Event()
 
     @property
     def player(self):
@@ -188,15 +190,30 @@ class OutputPipeline:
 
     def speak_stream(self, markdown_stream: Iterable[str]) -> None:
         """Speak a streamed markdown response as it arrives."""
+        self._cancel.clear()
         converter = _StreamConverter(self._code_blocks)
         for text in markdown_stream:
+            if self._cancel.is_set():
+                return  # barge-in: abandon the rest of the response
             for sentence in converter.feed(text):
+                if self._cancel.is_set():
+                    return
                 self._synthesize(sentence)
         for sentence in converter.finish():
+            if self._cancel.is_set():
+                return
             self._synthesize(sentence)
 
     def speak(self, markdown: str) -> None:
         self.speak_stream([markdown])
+
+    def cancel_current(self) -> None:
+        """Make the in-flight speak_stream stop consuming and synthesizing.
+
+        The barge-in path calls this right before stop_and_flush so no new
+        synthesis lands while the queue is being cleared.
+        """
+        self._cancel.set()
 
     def stop_and_flush(self) -> None:
         self._player.stop_and_flush()

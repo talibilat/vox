@@ -86,6 +86,28 @@ def test_stop_without_daemon(isolated_config):
     assert "not running" in result.stderr
 
 
+def test_interrupt_without_daemon(isolated_config):
+    result = cli("interrupt", config=isolated_config)
+    assert result.returncode == 1
+    assert "not running" in result.stderr
+
+
+def test_interrupt_does_not_kill_daemon_without_voice_loop(isolated_config):
+    # SIGUSR1's default action terminates a process; the daemon must install
+    # a handler even when no wake model is configured, or `earshot interrupt`
+    # would kill it instead of being a no-op.
+    assert cli("start", config=isolated_config).returncode == 0
+    try:
+        result = cli("interrupt", config=isolated_config)
+        assert result.returncode == 0
+        assert "interrupt sent" in result.stdout
+        time.sleep(0.3)
+        status = cli("status", config=isolated_config)
+        assert status.returncode == 0, "SIGUSR1 killed the daemon"
+    finally:
+        cli("stop", config=isolated_config)
+
+
 def test_stale_pid_file_is_cleaned(isolated_config, tmp_path):
     # A PID that cannot exist as a live process
     (tmp_path / "earshot.pid").write_text("99999999")
@@ -185,7 +207,7 @@ def test_config_error_exit_code(tmp_path):
 
 def test_daemon_stops_when_input_pipeline_thread_fails(monkeypatch, daemon_config):
     import earshot.agents
-    import earshot.input
+    import earshot.barge
 
     pipeline_failed = threading.Event()
     stopped = threading.Event()
@@ -234,7 +256,7 @@ def test_daemon_stops_when_input_pipeline_thread_fails(monkeypatch, daemon_confi
             raise AssertionError("daemon kept running after input pipeline failure")
 
     daemon_config.wake_word.model_path = "model.onnx"
-    monkeypatch.setattr(earshot.input, "InputPipeline", FailingPipeline)
+    monkeypatch.setattr(earshot.barge, "InterruptibleVoiceLoop", FailingPipeline)
     monkeypatch.setattr(daemon.signal, "signal", lambda *_args: None)
     monkeypatch.setattr(daemon.time, "sleep", sleep)
 
