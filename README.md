@@ -5,8 +5,8 @@ Earshot is a voice-to-voice control project for terminal coding agents.
 ## Earshot Scaffold
 
 The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
-The scaffold covers configuration loading, daemon lifecycle, and the first audio-input pipeline: wake word detection, end-of-speech detection, and local faster-whisper STT.
-Speech output and agent adapters land in later phase issues.
+The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, and the first speech-output pipeline: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, and interruptible speaker playback.
+Agent adapters land in later phase issues.
 
 Install for development with:
 
@@ -28,14 +28,17 @@ Audio input starts only when `wake_word.model_path` points at a trained openWake
 The committed feasibility model is `spikes/models/hey_earshot.onnx`; it is useful for development but not production-ready.
 
 On first run without `--config`, Earshot creates `~/.config/earshot/config.yaml` from the same template committed as `config.example.yaml`.
-Every config key is optional, unknown keys are rejected with key-path errors, and the schema already reserves fields for wake word, STT, TTS, code-block handling, agent harnesses, barge-in, and daemon paths.
-Local STT is implemented with faster-whisper; the API STT backend is reserved for issue #10 and raises until that lands.
+Every config key is optional, unknown keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, barge-in, and daemon paths.
+Local STT is implemented with faster-whisper, and local TTS is implemented with Piper.
+The API STT and TTS backends are reserved for issue #10 and raise until that lands; Kokoro remains a reserved local TTS engine and also raises today.
+Speech output converts streamed Markdown to speakable text sentence-by-sentence; `code_blocks` controls whether fenced code blocks are summarized, skipped, or read aloud.
 
 ## Docs
 
 - [Issue dependency graph](docs/dependency-graph.md)
 - [P1-01 repo scaffold notes](docs/tickets/P1-01.md)
 - [P1-02 audio input notes](docs/tickets/P1-02.md)
+- [P1-03 speech output notes](docs/tickets/P1-03.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
 - [P0-02 process notes](docs/tickets/P0-02.md)
@@ -45,6 +48,7 @@ Local STT is implemented with faster-whisper; the API STT backend is reserved fo
 - [Issue dependency graph](docs/dependency-graph.md) maps the implementation order across project phases.
 - [P1-01 repo scaffold notes](docs/tickets/P1-01.md) record the package, daemon, config schema, and validation work.
 - [P1-02 audio input notes](docs/tickets/P1-02.md) record the wake-word, endpointing, microphone, and local STT pipeline work.
+- [P1-03 speech output notes](docs/tickets/P1-03.md) record the markdown-to-speech, local Piper TTS, and interruptible playback work.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
 - [P0-01 VoiceMode notes](docs/voicemode-notes.md) record the VoiceMode design review and local Claude Code MCP smoke test.
@@ -57,3 +61,4 @@ Local STT is implemented with faster-whisper; the API STT backend is reserved fo
 - [P0-02 process notes](docs/tickets/P0-02.md)
 - [P0-03 process notes](docs/tickets/P0-03.md)
 - [P1-02 process notes](docs/tickets/P1-02.md)
+- [P1-03 process notes](docs/tickets/P1-03.md)

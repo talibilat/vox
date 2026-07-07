@@ -18,9 +18,9 @@ stt:
     model: whisper-1
 
 tts:
-  backend: local            # local | api
+  backend: local            # local works today; api is reserved for #10
   local:
-    engine: piper           # piper | kokoro
+    engine: piper           # piper works today; kokoro is reserved
     voice: en_US-lessac-medium
     speed: 1.0
   api:
@@ -29,7 +29,7 @@ tts:
     model: tts-1
     voice: alloy
 
-code_blocks: summarize      # summarize | skip | read
+code_blocks: summarize      # fenced code blocks: summarize | skip | read
 
 # Spoken agent name -> how to reach that agent.
 agents:
