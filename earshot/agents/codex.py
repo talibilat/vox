@@ -64,16 +64,20 @@ class CodexAdapter(AgentAdapter):
             )
         except OSError as exc:
             raise AgentError(f"could not launch agent {self._name}: {exc}") from exc
-        self._reader = threading.Thread(target=self._pump, daemon=True, name=f"codex-{self._name}")
-        self._reader.start()
-        self._request("initialize", {"clientInfo": {"name": "earshot", "version": "0.1"}})
-        params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
-        if self._config.model:
-            params["model"] = self._config.model
-        result = self._request("thread/start", params)
-        self._thread_id = result.get("thread", {}).get("id") or result.get("threadId")
-        if not self._thread_id:
-            raise AgentError(f"agent {self._name} did not return a thread id")
+        try:
+            self._reader = threading.Thread(target=self._pump, daemon=True, name=f"codex-{self._name}")
+            self._reader.start()
+            self._request("initialize", {"clientInfo": {"name": "earshot", "version": "0.1"}})
+            params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
+            if self._config.model:
+                params["model"] = self._config.model
+            result = self._request("thread/start", params)
+            self._thread_id = result.get("thread", {}).get("id") or result.get("threadId")
+            if not self._thread_id:
+                raise AgentError(f"agent {self._name} did not return a thread id")
+        except Exception:
+            self.stop()
+            raise
         logger.info(
             "agent %s ready (pid %s, thread %s)", self._name, self._proc.pid, self._thread_id
         )

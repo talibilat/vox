@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from earshot.agents import AgentError, create_adapter
+from earshot.agents import claude_code as claude_code_module
 from earshot.agents.claude_code import ClaudeCodeAdapter
 from earshot.agents.codex import CodexAdapter
 from earshot.agents.opencode import OpencodeAdapter
@@ -104,6 +105,55 @@ class TestAdapterContract:
         )
         with pytest.raises(AgentError, match="could not launch|not found"):
             adapter.start()
+
+
+def test_claude_code_input_pipe_failure_raises_agent_error(monkeypatch):
+    class BrokenStdin:
+        def write(self, _text):
+            raise BrokenPipeError("closed")
+
+    class BrokenProcess:
+        stdin = BrokenStdin()
+        stdout = None
+        returncode = None
+        terminated = False
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    proc = BrokenProcess()
+    monkeypatch.setattr(claude_code_module.subprocess, "Popen", lambda *_, **__: proc)
+    adapter = create_adapter("main", harness_config("claude-code", command=sys.executable))
+    adapter.start()
+    try:
+        with pytest.raises(AgentError, match="is not accepting input"):
+            list(adapter.send("hello"))
+        assert proc.terminated
+    finally:
+        adapter.stop()
+
+
+def test_codex_startup_failure_stops_child_process():
+    adapter = create_adapter(
+        "main",
+        harness_config(
+            "codex",
+            command=f"{sys.executable} {TESTS / 'fake_codex_appserver.py'} --no-thread-id",
+        ),
+    )
+    with pytest.raises(AgentError, match="thread id"):
+        adapter.start()
+    assert not adapter.alive
 
 
 @pytest.mark.skipif(shutil.which("claude") is None, reason="claude not installed")

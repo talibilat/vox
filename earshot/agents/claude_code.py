@@ -92,14 +92,18 @@ class ClaudeCodeAdapter(AgentAdapter):
                 "type": "user",
                 "message": {"role": "user", "content": [{"type": "text", "text": prompt}]},
             }
-            proc.stdin.write(json.dumps(message) + "\n")
-            proc.stdin.close()
+            try:
+                proc.stdin.write(json.dumps(message) + "\n")
+                proc.stdin.close()
+            except (OSError, ValueError, AttributeError) as exc:
+                self._stop_turn_process(proc)
+                raise AgentError(f"agent {self._name} is not accepting input: {exc}") from exc
             yield from self._stream_turn(proc)
         finally:
             with self._lock:
                 self._turn_proc = None
             if proc.poll() is None:
-                proc.terminate()
+                self._stop_turn_process(proc)
 
     # --- internals -----------------------------------------------------
 
@@ -177,3 +181,13 @@ class ClaudeCodeAdapter(AgentAdapter):
                     )
                 return
             yield line.strip()
+
+    def _stop_turn_process(self, proc: subprocess.Popen) -> None:
+        if proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()

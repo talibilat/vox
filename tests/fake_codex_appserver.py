@@ -7,6 +7,9 @@ notifications, then turn/completed). Prompt-driven failure modes:
 - "please error"  -> turn/completed with turn.error set
 - "please stall"  -> no events after the turn/start response
 - "please die"    -> the process exits 1 mid-turn
+
+Startup failure modes via argv:
+- --no-thread-id -> thread/start result omits thread.id
 """
 
 import json
@@ -25,6 +28,7 @@ def notify(method, params):
 
 
 def main():
+    no_thread_id = "--no-thread-id" in sys.argv[1:]
     turns = 0
     for line in sys.stdin:
         line = line.strip()
@@ -36,6 +40,9 @@ def main():
         if method == "initialize":
             emit({"jsonrpc": "2.0", "id": request_id, "result": {"userAgent": "fake-codex"}})
         elif method == "thread/start":
+            if no_thread_id:
+                emit({"jsonrpc": "2.0", "id": request_id, "result": {"thread": {}}})
+                continue
             emit(
                 {
                     "jsonrpc": "2.0",

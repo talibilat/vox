@@ -83,7 +83,7 @@ class TtsConfig:
 @dataclass
 class AgentConfig:
     harness: str = "opencode"
-    command: str | None = None  # explicit opencode-compatible serve command override
+    command: str | None = None  # explicit harness command override
     workdir: str = "~"
     # "provider/model-id" (or the harness's own model naming); None uses the
     # harness-specific default chosen by its adapter.
@@ -323,8 +323,8 @@ code_blocks: summarize      # fenced code blocks: summarize | skip | read
 # Spoken agent name -> how to reach that agent.
 agents:
   main:
-    harness: opencode       # opencode works today; claude-code/codex are reserved
-    command: null           # optional opencode-compatible serve command; --port is appended
+    harness: opencode       # opencode | claude-code | codex
+    command: null           # optional command: opencode serve, claude --print, codex app-server
     workdir: "~"
     model: null             # null = the harness's default (opencode pins {model})
     tmux_pane: null         # only for a harness on the tmux fallback path

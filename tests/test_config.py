@@ -37,6 +37,16 @@ def test_generated_default_file_loads(tmp_path):
     assert config.daemon.log_file.startswith("~")
 
 
+def test_generated_default_agent_comments_describe_current_harnesses(tmp_path):
+    path = tmp_path / "generated.yaml"
+    write_default(path)
+    text = path.read_text()
+    assert "claude-code/codex are reserved" not in text
+    assert "opencode-compatible serve command" not in text
+    assert "opencode | claude-code | codex" in text
+    assert "claude --print, codex app-server" in text
+
+
 def test_missing_default_config_is_created(tmp_path, monkeypatch):
     default = tmp_path / "nested" / "config.yaml"
     monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", default)
@@ -150,3 +160,6 @@ def test_example_config_matches_schema():
     data = yaml.safe_load(example.read_text())
     config = validate(config_module._from_dict(data))
     assert config.wake_word.phrase == "hey earshot"
+    text = example.read_text()
+    assert "claude-code/codex are reserved" not in text
+    assert "opencode-compatible serve command" not in text
