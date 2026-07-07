@@ -3,7 +3,8 @@
 
 Throwaway code, stdlib only. Proves the Conductor-owns-lifecycle model:
 spawn the server, create a session over HTTP, prompt it, stream events,
-detect idle, prompt again in the same session, tear down cleanly.
+detect turn completion from the event stream, prompt again in the same
+session, tear down cleanly.
 
 Usage:
   python3 spikes/opencode_serve_spike.py            # one two-turn run
@@ -121,9 +122,10 @@ class EventStream:
 def run_turn(base, events, session_id, text):
     """Send one prompt and stream until the final step ends.
 
-    Completion signal: `session.next.step.ended` with properties.finish == "stop".
-    (`session.idle` exists in the schema but was never observed on either
-    event stream in opencode 1.17.14, so it cannot be relied on.)
+    Completion signal: `session.next.step.ended` with finish == "stop".
+    On `/api/event` the finish value is under `data`; on legacy `/event`, it
+    is under `properties`. (`session.idle` exists in the schema but was never
+    observed on either event stream in opencode 1.17.14, so it cannot be relied on.)
     """
     api(base, "POST", f"/api/session/{session_id}/prompt", {"prompt": {"text": text}})
     chunks = []
