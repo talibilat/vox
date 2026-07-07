@@ -1,0 +1,48 @@
+# Earshot configuration. Every key is optional; missing keys use these defaults.
+
+wake_word:
+  phrase: hey earshot
+  model_path: null          # path to a trained openWakeWord .onnx model
+  sensitivity: 0.95         # detection threshold, 0..1
+  patience: 4               # consecutive windows above threshold to fire
+
+stt:
+  backend: local            # local | api
+  local:
+    model: base.en          # faster-whisper model size
+    device: cpu
+    compute_type: int8
+  api:
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    model: whisper-1
+
+tts:
+  backend: local            # local | api
+  local:
+    engine: piper           # piper | kokoro
+    voice: en_US-lessac-medium
+    speed: 1.0
+  api:
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    model: tts-1
+    voice: alloy
+
+code_blocks: summarize      # summarize | skip | read
+
+# Spoken agent name -> how to reach that agent.
+agents:
+  main:
+    harness: opencode       # opencode | claude-code | codex
+    command: null           # optional explicit launch command
+    workdir: "~"
+    tmux_pane: null         # only for a harness on the tmux fallback path
+
+barge_in:
+  vad_threshold: 0.5        # 0..1, Silero VAD speech probability
+  interrupt_hotkey: null    # e.g. ctrl+space, push-to-interrupt escape hatch
+
+daemon:
+  log_file: ~/.local/state/earshot/earshot.log
+  pid_file: ~/.local/state/earshot/earshot.pid
