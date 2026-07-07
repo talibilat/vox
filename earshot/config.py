@@ -54,8 +54,11 @@ _StrictLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _s
 class WakeWordConfig:
     phrase: str = "hey earshot"
     model_path: str | None = None
-    sensitivity: float = 0.95
-    patience: int = 4  # consecutive windows above sensitivity to fire
+    # Tuned in the P3-01 sweep (docs/tuning-protocol.md): 0.9/3 detected
+    # every positive with zero false fires across all noise scenarios, while
+    # 0.95 missed unseen voices entirely.
+    sensitivity: float = 0.9
+    patience: int = 3  # consecutive windows above sensitivity to fire
 
 
 @dataclass
@@ -117,7 +120,9 @@ class AgentConfig:
 
 @dataclass
 class BargeInConfig:
-    vad_threshold: float = 0.5
+    # Tuned in the P3-01 sweep: 0.6 has the same speech-onset lag as 0.5
+    # but zero false barge-ins from music and keyboard noise.
+    vad_threshold: float = 0.6
     interrupt_hotkey: str | None = None  # push-to-interrupt escape hatch
 
 
@@ -351,8 +356,8 @@ DEFAULT_CONFIG_TEMPLATE = """\
 wake_word:
   phrase: hey earshot
   model_path: null          # path to a trained openWakeWord .onnx model
-  sensitivity: 0.95         # detection threshold, 0..1
-  patience: 4               # consecutive windows above threshold to fire
+  sensitivity: 0.9          # detection threshold, 0..1 (tuned; see docs/tuning-protocol.md)
+  patience: 3               # consecutive windows above threshold to fire
 
 stt:
   backend: local            # local or api
@@ -392,7 +397,7 @@ agents:
     tmux_pane: null         # non-null session name selects the tmux fallback transport
 
 barge_in:
-  vad_threshold: 0.5        # 0..1, Silero VAD speech probability
+  vad_threshold: 0.6        # 0..1 speech probability (tuned; docs/tuning-protocol.md)
   interrupt_hotkey: null    # optional label; bind `earshot interrupt` outside Earshot
 
 daemon:

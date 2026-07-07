@@ -3,8 +3,8 @@
 wake_word:
   phrase: hey earshot
   model_path: null          # path to a trained openWakeWord .onnx model
-  sensitivity: 0.95         # detection threshold, 0..1
-  patience: 4               # consecutive windows above threshold to fire
+  sensitivity: 0.9          # detection threshold, 0..1 (tuned; see docs/tuning-protocol.md)
+  patience: 3               # consecutive windows above threshold to fire
 
 stt:
   backend: local            # local or api
@@ -33,8 +33,7 @@ tts:
 
 code_blocks: summarize      # fenced code blocks: summarize | skip | read
 
-# Spoken agent name -> how to reach that agent. The key is the name used in
-# voice addressing, for example "main, run the tests".
+# Spoken agent name -> how to reach that agent.
 agents:
   main:
     harness: opencode       # opencode | claude-code | codex
@@ -45,7 +44,7 @@ agents:
     tmux_pane: null         # non-null session name selects the tmux fallback transport
 
 barge_in:
-  vad_threshold: 0.5        # 0..1, Silero VAD speech probability
+  vad_threshold: 0.6        # 0..1 speech probability (tuned; docs/tuning-protocol.md)
   interrupt_hotkey: null    # optional label; bind `earshot interrupt` outside Earshot
 
 daemon:
