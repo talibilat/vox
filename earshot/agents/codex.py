@@ -65,7 +65,11 @@ class CodexAdapter(AgentAdapter):
         except OSError as exc:
             raise AgentError(f"could not launch agent {self._name}: {exc}") from exc
         try:
-            self._reader = threading.Thread(target=self._pump, daemon=True, name=f"codex-{self._name}")
+            self._reader = threading.Thread(
+                target=self._pump,
+                daemon=True,
+                name=f"codex-{self._name}",
+            )
             self._reader.start()
             self._request("initialize", {"clientInfo": {"name": "earshot", "version": "0.1"}})
             params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
