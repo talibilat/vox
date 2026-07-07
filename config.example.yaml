@@ -7,27 +7,29 @@ wake_word:
   patience: 4               # consecutive windows above threshold to fire
 
 stt:
-  backend: local            # local works today; api is reserved for #10
+  backend: local            # local or api
   local:
     model: base.en          # faster-whisper model size
     device: cpu
     compute_type: int8
   api:
     base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
+    api_key_env: OPENAI_API_KEY   # name of the env var holding the key; never a literal key
     model: whisper-1
+    fallback_to_local: false      # degrade to the local backend on API failure
 
 tts:
-  backend: local            # local works today; api is reserved for #10
+  backend: local            # local or api
   local:
     engine: piper           # piper works today; kokoro is reserved
     voice: en_US-lessac-medium
     speed: 1.0
   api:
     base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
+    api_key_env: OPENAI_API_KEY   # name of the env var holding the key; never a literal key
     model: tts-1
     voice: alloy
+    fallback_to_local: false      # degrade to the local backend on API failure
 
 code_blocks: summarize      # fenced code blocks: summarize | skip | read
 
@@ -37,7 +39,7 @@ agents:
     harness: opencode       # opencode | claude-code | codex
     command: null           # optional command: opencode serve, claude --print, codex app-server
     workdir: "~"
-    model: null             # null = the harness's default (opencode pins opencode/deepseek-v4-flash-free)
+    model: opencode/deepseek-v4-flash-free          # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:

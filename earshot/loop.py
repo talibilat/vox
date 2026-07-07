@@ -67,6 +67,11 @@ class ConversationLoop:
             logger.exception("retry after restart failed outside the agent")
             self._say("I could not speak the response. Check the logs.")
 
+    def say(self, sentence: str) -> None:
+        """Speak a status sentence on behalf of the daemon (e.g. STT failure
+        feedback from the voice loop). Never raises."""
+        self._say(sentence)
+
     def _say(self, sentence: str) -> None:
         """Speak a status sentence, never raising into the input thread."""
         try:

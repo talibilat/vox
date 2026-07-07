@@ -5,6 +5,8 @@ Earshot is a voice-to-voice control project for terminal coding agents.
 ## Earshot Scaffold
 
 The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
+The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 opencode-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper or OpenAI-compatible API STT, markdown-to-speakable text, local Piper or OpenAI-compatible API TTS, streamed agent responses, and barge-in interruption while the agent is speaking.
+Claude Code and codex adapters land in later phase issues.
 The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 harness-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, streamed agent responses, and barge-in interruption while the agent is speaking.
 The implemented agent harnesses are `opencode`, `claude-code`, and `codex`.
 
@@ -36,7 +38,7 @@ For the Phase 1 voice loop, configure the first agent under `agents` with `agent
 Set `agents.<name>.model` only when you want to override a harness default; `model: null` uses the adapter default, and opencode validates explicit overrides in `provider/model-id` form.
 If an agent fails mid-turn, Earshot speaks the failure; if the agent process died, Earshot announces one automatic restart, starts a fresh session, and retries the request once.
 Local STT is implemented with faster-whisper, and local TTS is implemented with Piper.
-The API STT and TTS backends are reserved for issue #10 and raise until that lands; Kokoro remains a reserved local TTS engine and also raises today.
+API STT and TTS use OpenAI-compatible `/audio/transcriptions` and `/audio/speech` endpoints, read the API key from the environment variable named by `stt.api.api_key_env` or `tts.api.api_key_env`, and can fall back to the local backend when `fallback_to_local` is true; Kokoro remains a reserved local TTS engine and raises today.
 Speech output converts streamed Markdown to speakable text sentence-by-sentence; `code_blocks` controls whether fenced code blocks are summarized, skipped, or read aloud.
 
 ## Docs
@@ -47,6 +49,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-03 speech output notes](docs/tickets/P1-03.md)
 - [P1-04 barge-in notes](docs/tickets/P1-04.md)
 - [P1-05 agent adapter notes](docs/tickets/P1-05.md)
+- [P1-07 API backend notes](docs/tickets/P1-07.md)
 - [P1-06 harness adapter notes](docs/tickets/P1-06.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
@@ -61,6 +64,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-03 speech output notes](docs/tickets/P1-03.md) record the markdown-to-speech, local Piper TTS, and interruptible playback work.
 - [P1-04 barge-in notes](docs/tickets/P1-04.md) record the VAD interruption loop, push-to-interrupt command, and target-hardware latency validation work.
 - [P1-05 agent adapter notes](docs/tickets/P1-05.md) record the opencode adapter, single-agent voice loop, and daemon agent-process ownership work.
+- [P1-07 API backend notes](docs/tickets/P1-07.md) record the OpenAI-compatible STT/TTS backends, API failure handling, and optional local fallback work.
 - [P1-06 harness adapter notes](docs/tickets/P1-06.md) record the Claude Code and codex adapters plus the three-harness validation matrix.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
@@ -78,4 +82,5 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-03 process notes](docs/tickets/P1-03.md)
 - [P1-04 process notes](docs/tickets/P1-04.md)
 - [P1-05 process notes](docs/tickets/P1-05.md)
+- [P1-07 process notes](docs/tickets/P1-07.md)
 - [P1-06 process notes](docs/tickets/P1-06.md)
