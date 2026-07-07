@@ -20,10 +20,15 @@ from pathlib import Path
 from earshot.config import Config
 
 logger = logging.getLogger("earshot")
+START_READY_TIMEOUT_SECONDS = 30
 
 
 def _pid_path(config: Config) -> Path:
     return Path(config.daemon.pid_file).expanduser()
+
+
+def _ready_path(config: Config) -> Path:
+    return _pid_path(config).with_suffix(_pid_path(config).suffix + ".ready")
 
 
 def _log_path(config: Config) -> Path:
@@ -101,6 +106,8 @@ def start(config: Config, config_path: str | None) -> int:
     existing = read_pid(config)
     if existing is not None:
         raise RuntimeError(f"daemon already running (pid {existing})")
+    ready_file = _ready_path(config)
+    ready_file.unlink(missing_ok=True)
     log_file = _log_path(config)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "earshot.cli"]
@@ -115,18 +122,24 @@ def start(config: Config, config_path: str | None) -> int:
             stdin=subprocess.DEVNULL,
             start_new_session=True,  # survive the parent's terminal
         )
-    # The child writes its own PID file once its loop is up; wait briefly so
-    # `earshot start && earshot status` behaves as expected.
-    deadline = time.time() + 5
+    # The child writes its ready file after startup completes so `start` only
+    # returns once the daemon can handle work.
+    deadline = time.time() + START_READY_TIMEOUT_SECONDS
     while time.time() < deadline:
-        if read_pid(config) == proc.pid:
-            return proc.pid
         if proc.poll() is not None:
             raise RuntimeError(
                 f"daemon exited immediately (exit code {proc.returncode}); see {log_file}"
             )
+        if read_pid(config) == proc.pid:
+            try:
+                if int(ready_file.read_text().strip()) == proc.pid:
+                    return proc.pid
+            except (FileNotFoundError, ValueError):
+                pass
         time.sleep(0.05)
-    raise RuntimeError(f"daemon did not report ready within 5s; see {log_file}")
+    raise RuntimeError(
+        f"daemon did not report ready within {START_READY_TIMEOUT_SECONDS}s; see {log_file}"
+    )
 
 
 def interrupt(config: Config) -> int:
@@ -172,7 +185,9 @@ def run(config: Config) -> None:
     )
 
     pid_file = _pid_path(config)
+    ready_file = _ready_path(config)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
+    ready_file.unlink(missing_ok=True)
     pid_file.write_text(str(os.getpid()))
 
     stopping = False
@@ -215,7 +230,12 @@ def run(config: Config) -> None:
         # agent; the supervisor owns everyone else.
         fleet.start_supervision(active_name=active_name)
 
-        pipeline = InterruptibleVoiceLoop(config, active.adapter, OutputPipeline(config))
+        pipeline = InterruptibleVoiceLoop(
+            config,
+            active.adapter,
+            OutputPipeline(config),
+            restart=lambda: fleet.restart(active_name),
+        )
 
         def _run_pipeline() -> None:
             nonlocal pipeline_error
@@ -235,6 +255,8 @@ def run(config: Config) -> None:
     else:
         logger.info("voice loop disabled (wake_word.model_path is not set)")
 
+    ready_file.write_text(str(os.getpid()))
+
     try:
         while not stopping:
             if pipeline_error is not None:
@@ -251,6 +273,11 @@ def run(config: Config) -> None:
         try:
             if pid_file.read_text().strip() == str(os.getpid()):
                 pid_file.unlink()
+        except (FileNotFoundError, ValueError):
+            pass
+        try:
+            if ready_file.read_text().strip() == str(os.getpid()):
+                ready_file.unlink()
         except (FileNotFoundError, ValueError):
             pass
         logger.info("earshot daemon stopped")

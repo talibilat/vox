@@ -77,6 +77,9 @@ class Fleet:
     def statuses(self) -> dict[str, str]:
         return self.registry.statuses()
 
+    def restart(self, name: str) -> bool:
+        return self._start_record(self.registry.get(name), restart=True)
+
     # --- supervision -------------------------------------------------------
 
     def start_supervision(self, active_name: str | None = None) -> None:
@@ -105,7 +108,7 @@ class Fleet:
                 if record.config.restart_on_death and record.name != self._active_name:
                     self._start_record(record, restart=True)
 
-    def _start_record(self, record: AgentRecord, restart: bool = False) -> None:
+    def _start_record(self, record: AgentRecord, restart: bool = False) -> bool:
         record.mark("starting")
         try:
             if restart:
@@ -116,7 +119,8 @@ class Fleet:
                 "%s agent %s failed", "restarting" if restart else "starting", record.name
             )
             record.mark("dead")
-            return
+            return False
         record.mark("idle")
         if restart:
             logger.info("agent %s restarted in a fresh session", record.name)
+        return True

@@ -175,6 +175,16 @@ class TestSupervision:
         finally:
             fleet.stop_all()
 
+    def test_restart_updates_record_status(self, fleet_factory):
+        fleet, adapters = fleet_factory(["alpha"])
+        fleet.start_all()
+        adapters["alpha"].kill()
+        fleet.get("alpha").mark("dead")
+
+        assert fleet.restart("alpha")
+        assert adapters["alpha"].alive
+        assert fleet.get("alpha").status == "idle"
+
 
 class TestMultiAgentConfig:
     def test_duplicate_agent_names_rejected(self, tmp_path):

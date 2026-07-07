@@ -13,6 +13,7 @@ restart loses the session, which is also said out loud.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from earshot.agents import AgentAdapter, AgentError
 from earshot.output import OutputPipeline
@@ -21,9 +22,15 @@ logger = logging.getLogger("earshot.loop")
 
 
 class ConversationLoop:
-    def __init__(self, adapter: AgentAdapter, output: OutputPipeline):
+    def __init__(
+        self,
+        adapter: AgentAdapter,
+        output: OutputPipeline,
+        restart: Callable[[], bool] | None = None,
+    ):
         self._adapter = adapter
         self._output = output
+        self._restart = restart
 
     def handle_transcript(self, text: str) -> None:
         """Run one voice turn. Called from the input pipeline's thread."""
@@ -47,14 +54,16 @@ class ConversationLoop:
             return
         self._say("The agent stopped. Restarting it now.")
         try:
-            self._adapter.stop()
-            self._adapter.start()
+            restarted = self._restart() if self._restart is not None else self._restart_adapter()
         except AgentError as restart_error:
             logger.error("agent restart failed: %s", restart_error)
             self._say("I could not restart the agent. Check the logs.")
             return
         except Exception:
             logger.exception("agent restart failed unexpectedly")
+            self._say("I could not restart the agent. Check the logs.")
+            return
+        if not restarted:
             self._say("I could not restart the agent. Check the logs.")
             return
         self._say("The agent is back, in a fresh session. Repeating your request.")
@@ -71,6 +80,11 @@ class ConversationLoop:
         """Speak a status sentence on behalf of the daemon (e.g. STT failure
         feedback from the voice loop). Never raises."""
         self._say(sentence)
+
+    def _restart_adapter(self) -> bool:
+        self._adapter.stop()
+        self._adapter.start()
+        return True
 
     def _say(self, sentence: str) -> None:
         """Speak a status sentence, never raising into the input thread."""
