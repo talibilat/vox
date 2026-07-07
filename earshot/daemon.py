@@ -13,6 +13,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -177,12 +178,30 @@ def run(config: Config) -> None:
     logger.info(
         "earshot daemon started (pid %d, agents: %s)", os.getpid(), ", ".join(config.agents)
     )
+
+    pipeline = None
+    pipeline_thread = None
+    if config.wake_word.model_path:
+        from earshot.input import InputPipeline
+
+        # Transcript consumption is the agent loop's job (#8); until it
+        # lands, transcripts are logged so the input path is observable.
+        pipeline = InputPipeline(config, on_transcript=lambda text: logger.info("heard: %s", text))
+        pipeline_thread = threading.Thread(target=pipeline.run, daemon=True, name="input-pipeline")
+        pipeline_thread.start()
+        logger.info("input pipeline listening (wake word: %r)", config.wake_word.phrase)
+    else:
+        logger.info("input pipeline disabled (wake_word.model_path is not set)")
+
     try:
-        # Placeholder loop: the audio pipeline (#5, #6, #7) and agent
+        # The speech-output pipeline (#6), barge-in (#7), and agent
         # lifecycle (#8, #11) plug in here.
         while not stopping:
             time.sleep(0.2)
     finally:
+        if pipeline is not None:
+            pipeline.stop()
+            pipeline_thread.join(timeout=5)
         # Only remove the PID file this process owns; never clobber a file
         # that another daemon has since written.
         try:
