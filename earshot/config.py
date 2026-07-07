@@ -112,7 +112,7 @@ class AgentConfig:
     # harness-specific default chosen by its adapter.
     model: str | None = None
     restart_on_death: bool = True  # fleet supervisor restarts this agent if it dies
-    tmux_pane: str | None = None  # only for a harness on the tmux fallback path
+    tmux_pane: str | None = None  # non-null session name selects tmux fallback transport
 
 
 @dataclass
@@ -385,11 +385,11 @@ code_blocks: summarize      # fenced code blocks: summarize | skip | read
 agents:
   main:
     harness: opencode       # opencode | claude-code | codex
-    command: null           # optional command: opencode serve, claude --print, codex app-server
+    command: null           # claude --print, codex app-server; tmux fallback launches it
     workdir: "~"
     model: null             # null = the harness's default (opencode pins {model})
     restart_on_death: true  # fleet supervisor restarts this agent if it dies
-    tmux_pane: null         # only for a harness on the tmux fallback path
+    tmux_pane: null         # non-null session name selects the tmux fallback transport
 
 barge_in:
   vad_threshold: 0.5        # 0..1, Silero VAD speech probability

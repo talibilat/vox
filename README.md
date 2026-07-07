@@ -7,7 +7,7 @@ Earshot is a voice-to-voice control project for terminal coding agents.
 The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
 The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the harness-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper or OpenAI-compatible API STT, markdown-to-speakable text, local Piper or OpenAI-compatible API TTS, streamed agent responses, voice addressing, per-agent output watchers, spoken fleet status, and barge-in interruption while the agent is speaking.
 Phase 2 adds the Conductor core: the daemon starts every configured agent as a supervised fleet, staggers startup, tracks per-agent lifecycle status, restarts dead agents according to each agent's `restart_on_death` policy, routes spoken turns by addressed agent name, and buffers non-active agents' responses until they are read aloud on request.
-The implemented agent harnesses are `opencode`, `claude-code`, and `codex`.
+The implemented agent harnesses are `opencode`, `claude-code`, and `codex`, with an opt-in tmux fallback transport for harnesses whose native surface is not healthy enough.
 
 Install for development with:
 
@@ -32,8 +32,9 @@ While the daemon is responding, speaking over playback interrupts the agent, sto
 Use `earshot interrupt` as the push-to-interrupt escape hatch; bind that command in your OS or launcher if you want a one-keystroke hotkey.
 
 On first run without `--config`, Earshot creates `~/.config/earshot/config.yaml` from the same template committed as `config.example.yaml`.
-Every config key is optional, unknown keys and duplicate YAML keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, restart policy, barge-in, and daemon paths.
+Every config key is optional, unknown keys and duplicate YAML keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, optional tmux fallback transport, restart policy, barge-in, and daemon paths.
 Configure named agents under `agents` with `agents.<name>.harness` set to `opencode`, `claude-code`, or `codex`, plus an `agents.<name>.workdir`; Earshot owns the harness processes, starts the full fleet when the voice loop is enabled, and routes addressed utterances like `<name>, run the tests` to that agent's watcher.
+Set `agents.<name>.tmux_pane` only to force that agent through the tmux fallback transport; the value is the tmux session name Earshot owns, and `agents.<name>.command` can override the CLI launched inside it.
 Set `agents.<name>.model` only when you want to override a harness default; `model: null` uses the adapter default, and opencode validates explicit overrides in `provider/model-id` form.
 Agent names are spoken names, so validation warns when names are short or too similar for reliable speech recognition; fuzzy matching handles common vowel-level mishearings, ambiguous matches ask for confirmation aloud, and unaddressed follow-ups go to the active agent.
 Only the active agent's turn streams to the speaker as it arrives; other agents work silently, move to `finished` when an unread response is buffered, and are read aloud with requests like `<name>, what's your response`.
@@ -57,6 +58,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P2-01 Conductor core notes](docs/tickets/P2-01.md)
 - [P2-02 voice addressing notes](docs/tickets/P2-02.md)
 - [P2-03 output watcher notes](docs/tickets/P2-03.md)
+- [P2-04 tmux fallback notes](docs/tickets/P2-04.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
 - [Per-harness control-plane verdicts](docs/control-plane-verdicts.md)
@@ -75,6 +77,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P2-01 Conductor core notes](docs/tickets/P2-01.md) record the multi-agent fleet lifecycle, per-agent restart policy, duplicate-name rejection, phonetic naming warnings, and live 16-agent validation.
 - [P2-02 voice addressing notes](docs/tickets/P2-02.md) record fuzzy leading-name routing, active-agent switching, clarification prompts, fleet phrase protection, and the router handoff from the voice loop.
 - [P2-03 output watcher notes](docs/tickets/P2-03.md) record per-agent watcher threads, silent background buffering, readback requests, natural fleet status, and watcher-owned failure isolation.
+- [P2-04 tmux fallback notes](docs/tickets/P2-04.md) record the generic opt-in tmux transport, session ownership, literal prompt delivery, capture-pane output cleanup, and quiescence-based completion limits.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
 - [P0-01 VoiceMode notes](docs/voicemode-notes.md) record the VoiceMode design review and local Claude Code MCP smoke test.
@@ -96,3 +99,4 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P2-01 process notes](docs/tickets/P2-01.md)
 - [P2-02 process notes](docs/tickets/P2-02.md)
 - [P2-03 process notes](docs/tickets/P2-03.md)
+- [P2-04 process notes](docs/tickets/P2-04.md)

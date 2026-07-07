@@ -6,7 +6,12 @@ from earshot.config import AgentConfig, Config
 
 def create_adapter(name: str, agent_config: AgentConfig) -> AgentAdapter:
     """Instantiate the adapter for one configured agent (the registry keyed
-    by the config `harness` field)."""
+    by the config `harness` field). Setting `tmux_pane` overrides the native
+    surface with the tmux fallback transport for that agent."""
+    if agent_config.tmux_pane:
+        from earshot.agents.tmux_fallback import TmuxAgentAdapter
+
+        return TmuxAgentAdapter(name, agent_config)
     if agent_config.harness == "opencode":
         from earshot.agents.opencode import OpencodeAdapter
 
