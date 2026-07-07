@@ -10,6 +10,10 @@ from __future__ import annotations
 import numpy as np
 
 from earshot.audio import FRAME_SAMPLES, SAMPLE_RATE
+from earshot.openwakeword_resources import (
+    download_openwakeword_resources,
+    is_missing_openwakeword_resource,
+)
 
 FRAME_MS = FRAME_SAMPLES * 1000 // SAMPLE_RATE
 
@@ -23,7 +27,13 @@ class EndOfSpeechDetector:
     ):
         from openwakeword.vad import VAD
 
-        self._vad = VAD()
+        try:
+            self._vad = VAD()
+        except Exception as exc:
+            if not is_missing_openwakeword_resource(exc):
+                raise
+            download_openwakeword_resources()
+            self._vad = VAD()
         self._threshold = threshold
         self._silence_frames_needed = max(1, silence_ms // FRAME_MS)
         self._max_frames = max(1, max_utterance_ms // FRAME_MS)

@@ -10,12 +10,23 @@ from __future__ import annotations
 
 import numpy as np
 
+from earshot.openwakeword_resources import (
+    download_openwakeword_resources,
+    is_missing_openwakeword_resource,
+)
+
 
 class WakeWordDetector:
     def __init__(self, model_path: str, sensitivity: float = 0.95, patience: int = 4):
         from openwakeword.model import Model
 
-        self._model = Model(wakeword_models=[model_path], inference_framework="onnx")
+        try:
+            self._model = Model(wakeword_models=[model_path], inference_framework="onnx")
+        except Exception as exc:
+            if not is_missing_openwakeword_resource(exc):
+                raise
+            download_openwakeword_resources()
+            self._model = Model(wakeword_models=[model_path], inference_framework="onnx")
         self._name = next(iter(self._model.models))
         self._sensitivity = sensitivity
         self._patience = max(1, patience)
