@@ -53,7 +53,9 @@ def main():
         assert detected_at is not None, "VAD never detected speech"
         onset_lags.append(detected_at - true_onset_s)
 
-    print(f"silero-vad onset detection ({runs} runs, threshold=0.5, {CHUNK}-sample chunks)")
+    print(
+        f"silero-vad onset detection ({runs} runs, threshold=0.5, {CHUNK}-sample chunks)"
+    )
     print(
         f"  audio-time lag from true onset: median={statistics.median(onset_lags)*1000:.0f}ms "
         f"worst={max(onset_lags)*1000:.0f}ms"
@@ -68,7 +70,9 @@ def main():
     # One chunk of mic buffering already counted inside the lag; add inference
     # cost and a generous 20ms allowance for stopping playback.
     est = lag + infer + 20
-    print(f"  interrupt-path estimate: {lag:.0f}ms detection + {infer:.2f}ms inference + 20ms audio-stop = {est:.0f}ms")
+    print(
+        f"  interrupt-path estimate: {lag:.0f}ms detection + {infer:.2f}ms inference + 20ms audio-stop = {est:.0f}ms"
+    )
     print(f"  headroom vs {budget}ms budget: {budget - est:.0f}ms")
 
 

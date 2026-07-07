@@ -28,14 +28,28 @@ SR = 16000
 WINDOW_FRAMES = 16  # 16 x 96 embedding window ~= 2s of audio, oww standard
 POSITIVE = "Hey Earshot"
 
-TRAIN_VOICES = ["Samantha", "Daniel", "Karen", "Moira", "Rishi", "Aman",
-                "Albert", "Fred",
-                "Eddy (English (US))", "Eddy (English (UK))",
-                "Flo (English (UK))", "Flo (English (US))",
-                "Grandma (English (US))", "Grandma (English (UK))",
-                "Grandpa (English (UK))", "Grandpa (English (US))",
-                "Sandy (English (US))", "Sandy (English (UK))",
-                "Shelley (English (UK))", "Shelley (English (US))"]
+TRAIN_VOICES = [
+    "Samantha",
+    "Daniel",
+    "Karen",
+    "Moira",
+    "Rishi",
+    "Aman",
+    "Albert",
+    "Fred",
+    "Eddy (English (US))",
+    "Eddy (English (UK))",
+    "Flo (English (UK))",
+    "Flo (English (US))",
+    "Grandma (English (US))",
+    "Grandma (English (UK))",
+    "Grandpa (English (UK))",
+    "Grandpa (English (US))",
+    "Sandy (English (US))",
+    "Sandy (English (UK))",
+    "Shelley (English (UK))",
+    "Shelley (English (US))",
+]
 TEST_VOICES = ["Tessa", "Tara", "Reed (English (US))", "Rocko (English (UK))"]
 TRAIN_RATES = [130, 160, 190, 220]
 TEST_RATES = [160, 200]
@@ -68,21 +82,38 @@ def synth(voice, rate, text, out_wav):
     aiff = out_wav.replace(".wav", ".aiff")
     subprocess.run(["say", "-v", voice, "-r", str(rate), "-o", aiff, text], check=True)
     subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-i", aiff, "-ar", str(SR), "-ac", "1", out_wav],
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            aiff,
+            "-ar",
+            str(SR),
+            "-ac",
+            "1",
+            out_wav,
+        ],
         check=True,
     )
     os.remove(aiff)
 
 
 def stage_gen(workdir):
-    for split, voices, rates in [("train", TRAIN_VOICES, TRAIN_RATES), ("test", TEST_VOICES, TEST_RATES)]:
+    for split, voices, rates in [
+        ("train", TRAIN_VOICES, TRAIN_RATES),
+        ("test", TEST_VOICES, TEST_RATES),
+    ]:
         pos_dir = os.path.join(workdir, split, "positive")
         neg_dir = os.path.join(workdir, split, "negative")
         os.makedirs(pos_dir, exist_ok=True)
         os.makedirs(neg_dir, exist_ok=True)
         for vi, voice in enumerate(voices):
             for rate in rates:
-                synth(voice, rate, POSITIVE, os.path.join(pos_dir, f"pos_{vi}_{rate}.wav"))
+                synth(
+                    voice, rate, POSITIVE, os.path.join(pos_dir, f"pos_{vi}_{rate}.wav")
+                )
             for pi, phrase in enumerate(NEGATIVE_PHRASES):
                 rate = rates[pi % len(rates)]
                 synth(voice, rate, phrase, os.path.join(neg_dir, f"neg_{vi}_{pi}.wav"))
@@ -204,7 +235,9 @@ def stage_train(workdir):
         thresh = float(np.quantile(neg_scores.numpy(), 0.995))
         pos_recall_at = (scores[yt > 0.5] > thresh).float().mean().item()
     print(f"train accuracy: positive={pos_acc:.3f} negative={neg_acc:.3f}")
-    print(f"calibrated threshold: {thresh:.3f} (train recall at threshold: {pos_recall_at:.3f})")
+    print(
+        f"calibrated threshold: {thresh:.3f} (train recall at threshold: {pos_recall_at:.3f})"
+    )
     with open(os.path.join(workdir, "threshold.txt"), "w") as f:
         f.write(str(max(0.5, min(0.95, thresh))))
 
@@ -241,28 +274,42 @@ def stage_test(workdir):
         assert sr == SR
         # Prepend silence so the feature buffer is primed with real audio by
         # the time the phrase arrives, as in always-on ambient listening.
-        x = np.concatenate([np.zeros(SR * 2, dtype=np.int16), (audio * 32767).astype(np.int16)])
+        x = np.concatenate(
+            [np.zeros(SR * 2, dtype=np.int16), (audio * 32767).astype(np.int16)]
+        )
         oww.reset()
         scores = [s["hey_earshot"] for s in oww.predict_clip(x)]
-        return max(min(scores[i : i + PATIENCE]) for i in range(len(scores) - PATIENCE + 1))
+        return max(
+            min(scores[i : i + PATIENCE]) for i in range(len(scores) - PATIENCE + 1)
+        )
 
     threshold = THRESHOLD
     results = {"tp": 0, "fn": 0, "tn": 0, "fp": 0}
-    print(f"held-out test (threshold={threshold}, patience={PATIENCE} consecutive windows):")
+    print(
+        f"held-out test (threshold={threshold}, patience={PATIENCE} consecutive windows):"
+    )
     for path in sorted(glob.glob(os.path.join(workdir, "test", "positive", "*.wav"))):
         s = max_score(path)
         hit = s >= threshold
         results["tp" if hit else "fn"] += 1
-        print(f"  POS {os.path.basename(path)}: score={s:.3f} {'OK' if hit else 'MISS'}")
+        print(
+            f"  POS {os.path.basename(path)}: score={s:.3f} {'OK' if hit else 'MISS'}"
+        )
     for path in sorted(glob.glob(os.path.join(workdir, "test", "negative", "*.wav"))):
         s = max_score(path)
         hit = s >= threshold
         results["fp" if hit else "tn"] += 1
-        print(f"  NEG {os.path.basename(path)}: score={s:.3f} {'FALSE-TRIGGER' if hit else 'ok'}")
+        print(
+            f"  NEG {os.path.basename(path)}: score={s:.3f} {'FALSE-TRIGGER' if hit else 'ok'}"
+        )
     n_pos = results["tp"] + results["fn"]
     n_neg = results["tn"] + results["fp"]
-    print(f"positives: {results['tp']}/{n_pos} detected, false-negative rate {results['fn']/n_pos:.0%}")
-    print(f"negatives: {results['fp']}/{n_neg} false triggers, false-positive rate {results['fp']/n_neg:.0%}")
+    print(
+        f"positives: {results['tp']}/{n_pos} detected, false-negative rate {results['fn']/n_pos:.0%}"
+    )
+    print(
+        f"negatives: {results['fp']}/{n_neg} false triggers, false-positive rate {results['fp']/n_neg:.0%}"
+    )
 
 
 def main():

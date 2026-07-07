@@ -24,7 +24,9 @@ def bench(model_name, wav, runs):
     for _ in range(runs):
         t0 = time.perf_counter()
         segments, _info = model.transcribe(wav, beam_size=1, language="en")
-        text = " ".join(s.text.strip() for s in segments)  # generator: consume = actual work
+        text = " ".join(
+            s.text.strip() for s in segments
+        )  # generator: consume = actual work
         times.append(time.perf_counter() - t0)
     return times, text
 
@@ -35,7 +37,9 @@ def main():
     for name in MODELS:
         times, text = bench(name, wav, runs)
         print(f"model={name} runs={runs}")
-        print(f"  median={statistics.median(times)*1000:.0f}ms worst={max(times)*1000:.0f}ms best={min(times)*1000:.0f}ms")
+        print(
+            f"  median={statistics.median(times)*1000:.0f}ms worst={max(times)*1000:.0f}ms best={min(times)*1000:.0f}ms"
+        )
         print(f"  transcript: {text[:120]}")
 
 
