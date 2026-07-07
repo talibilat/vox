@@ -65,8 +65,15 @@ class CodexAdapter(AgentAdapter):
         except OSError as exc:
             raise AgentError(f"could not launch agent {self._name}: {exc}") from exc
         try:
+            # Fresh per-process state: a previous (dead) process's reader
+            # thread wakes on EOF asynchronously and poisons every waiter it
+            # can see with a "died" sentinel; giving each process its own
+            # dict and queue makes that EOF harmless after a restart.
+            self._responses = {}
+            self._notifications = queue.Queue()
             self._reader = threading.Thread(
                 target=self._pump,
+                args=(self._proc.stdout, self._responses, self._notifications),
                 daemon=True,
                 name=f"codex-{self._name}",
             )
@@ -156,9 +163,13 @@ class CodexAdapter(AgentAdapter):
             )
         return response.get("result", {})
 
-    def _pump(self) -> None:
-        """Reader thread: route responses to callers, notifications to send()."""
-        stream = self._proc.stdout
+    def _pump(self, stream, responses: dict, notifications: queue.Queue) -> None:
+        """Reader thread: route responses to callers, notifications to send().
+
+        Operates only on the state it was handed at spawn time, so after a
+        restart the dead process's EOF cannot poison the new process's
+        requests.
+        """
         for line in stream:
             line = line.strip()
             if not line:
@@ -169,17 +180,17 @@ class CodexAdapter(AgentAdapter):
                 continue
             if "id" in message and ("result" in message or "error" in message):
                 with self._lock:
-                    waiter = self._responses.get(message["id"])
+                    waiter = responses.get(message["id"])
                 if waiter is not None:
                     waiter.put(message)
             elif "method" in message:
-                self._notifications.put(message)
-        # EOF: wake up everything that might be waiting.
+                notifications.put(message)
+        # EOF: wake up everything that might be waiting on THIS process.
         with self._lock:
-            waiters = list(self._responses.values())
+            waiters = list(responses.values())
         for waiter in waiters:
             waiter.put(None)
-        self._notifications.put(None)
+        notifications.put(None)
 
     def _drain_notifications(self) -> None:
         try:

@@ -191,23 +191,31 @@ def run(config: Config) -> None:
     pipeline = None
     pipeline_thread = None
     pipeline_error: BaseException | None = None
-    adapter = None
+    fleet = None
     # SIGUSR1 is the push-to-interrupt escape hatch (`earshot interrupt`).
     # Registered unconditionally and BEFORE the voice loop exists: the
     # default SIGUSR1 action would otherwise terminate a daemon that is
     # running without a wake model.
     signal.signal(signal.SIGUSR1, lambda *_: pipeline and pipeline.request_interrupt())
     if config.wake_word.model_path:
-        from earshot.agents import create_adapter, first_agent
+        from earshot.agents import first_agent
         from earshot.barge import InterruptibleVoiceLoop
+        from earshot.conductor import Fleet
         from earshot.output import OutputPipeline
 
-        agent_name, agent_config = first_agent(config)
-        adapter = create_adapter(agent_name, agent_config)
-        adapter.start()
-        logger.info("agent %s (%s) is up", agent_name, agent_config.harness)
+        # Single-agent operation is the degenerate case of a one-agent
+        # fleet: one code path from Phase 1 through 16 agents.
+        fleet = Fleet(config)
+        fleet.start_all()
+        active_name, _ = first_agent(config)
+        active = fleet.get(active_name)
+        if active.status == "dead":
+            raise RuntimeError(f"the active agent {active_name!r} failed to start")
+        # The conversation loop owns turn-triggered recovery for the active
+        # agent; the supervisor owns everyone else.
+        fleet.start_supervision(active_name=active_name)
 
-        pipeline = InterruptibleVoiceLoop(config, adapter, OutputPipeline(config))
+        pipeline = InterruptibleVoiceLoop(config, active.adapter, OutputPipeline(config))
 
         def _run_pipeline() -> None:
             nonlocal pipeline_error
@@ -219,12 +227,15 @@ def run(config: Config) -> None:
 
         pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="voice-loop")
         pipeline_thread.start()
-        logger.info("voice loop listening (wake word: %r)", config.wake_word.phrase)
+        logger.info(
+            "voice loop listening (wake word: %r, active agent: %s)",
+            config.wake_word.phrase,
+            active_name,
+        )
     else:
         logger.info("voice loop disabled (wake_word.model_path is not set)")
 
     try:
-        # Multi-agent lifecycle (#11) plugs in here.
         while not stopping:
             if pipeline_error is not None:
                 raise RuntimeError("input pipeline failed") from pipeline_error
@@ -233,8 +244,8 @@ def run(config: Config) -> None:
         if pipeline is not None:
             pipeline.stop()
             pipeline_thread.join(timeout=5)
-        if adapter is not None:
-            adapter.stop()
+        if fleet is not None:
+            fleet.stop_all()
         # Only remove the PID file this process owns; never clobber a file
         # that another daemon has since written.
         try:

@@ -189,3 +189,19 @@ class TestRealCodex:
             assert "CODEX_ADAPTER_OK" in second, "multi-turn persistence failed (thread reuse)"
         finally:
             adapter.stop()
+
+
+def test_codex_restart_not_poisoned_by_old_reader(_fake_claude_state):
+    """Regression: the dead process's reader thread wakes on EOF after a
+    restart and used to poison the new process's first request with a
+    'died' sentinel (seen live as 'died before answering initialize')."""
+    adapter = create_adapter("main", harness_config("codex"))
+    adapter.start()
+    adapter._proc.kill()
+    adapter._proc.wait()
+    adapter.stop()
+    adapter.start()  # must succeed despite the old reader's EOF
+    try:
+        assert "you said" in "".join(adapter.send("after restart"))
+    finally:
+        adapter.stop()

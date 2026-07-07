@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command in ("status", "stop", "interrupt"):
+        # Config-quality warnings (e.g. phonetically risky agent names)
+        # belong to startup, not to every quick status query.
+        import logging
+
+        logging.getLogger("earshot.config").setLevel(logging.ERROR)
     try:
         config = config_module.load(args.config)
     except ConfigError as e:
