@@ -53,16 +53,14 @@ def main():
         assert detected_at is not None, "VAD never detected speech"
         onset_lags.append(detected_at - true_onset_s)
 
+    print(f"silero-vad onset detection ({runs} runs, threshold=0.5, {CHUNK}-sample chunks)")
     print(
-        f"silero-vad onset detection ({runs} runs, threshold=0.5, {CHUNK}-sample chunks)"
+        f"  audio-time lag from true onset: median={statistics.median(onset_lags) * 1000:.0f}ms "
+        f"worst={max(onset_lags) * 1000:.0f}ms"
     )
     print(
-        f"  audio-time lag from true onset: median={statistics.median(onset_lags)*1000:.0f}ms "
-        f"worst={max(onset_lags)*1000:.0f}ms"
-    )
-    print(
-        f"  per-chunk inference: median={statistics.median(chunk_times)*1000:.2f}ms "
-        f"worst={max(chunk_times)*1000:.2f}ms over {len(chunk_times)} chunks"
+        f"  per-chunk inference: median={statistics.median(chunk_times) * 1000:.2f}ms "
+        f"worst={max(chunk_times) * 1000:.2f}ms over {len(chunk_times)} chunks"
     )
     budget = 200
     lag = statistics.median(onset_lags) * 1000
