@@ -4,6 +4,8 @@ The Phase 0 spike (docs/latency-spike.md) showed that firing on a single
 high-scoring window false-triggers heavily, while requiring `patience`
 consecutive windows above the threshold cuts false positives by an order of
 magnitude. That rule lives here so every caller gets it.
+The daemon passes the P3-01-tuned config defaults (0.9 sensitivity,
+patience 3); the constructor defaults preserve the Phase 0 operating point.
 """
 
 from __future__ import annotations

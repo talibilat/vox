@@ -66,7 +66,8 @@ Interrupt-path budget on paper:
 ~68ms  total, leaving ~132ms headroom under the 200ms target
 ```
 
-Verdict: the 200ms barge-in target is comfortably achievable on paper, with two thirds of the budget spare for real-world audio-device latency and scheduling jitter. Final tuning under noise is #15's job.
+Verdict: the 200ms barge-in target is comfortably achievable on paper, with two thirds of the budget spare for real-world audio-device latency and scheduling jitter.
+P3-01 later moved the shipped `barge_in.vad_threshold` default to 0.6 after the reproducible noise sweep in `docs/tuning-protocol.md`.
 
 ## Wake word: "Hey Earshot" first-pass model (openWakeWord)
 
@@ -97,7 +98,8 @@ Failure analysis:
 
 Verdict: **"Hey Earshot" remains a plausible wake word, but this model is only a feasibility spike artifact.**
 The pipeline (multi-voice synthetic generation, streaming-consistent feature extraction, ONNX head loadable by `openwakeword.Model`, patience-scored detection) works end to end and rejects normal conversation reliably, but the committed model does not yet have acceptable unseen-voice recall.
-That recall gap is exactly what more positive-sample scale and real-noise tuning should address (the official openWakeWord recipe at full scale, plus #15's live tuning); nothing here proves the phrase or the architecture is production-ready.
+That recall gap is exactly what more positive-sample scale and real-noise tuning should address; nothing here proves the phrase or the architecture is production-ready.
+P3-01 later changed the shipped config operating point to sensitivity 0.9 and patience 3 after the sweep detected 2/2 unseen-voice positives with zero false fires across the synthetic noise scenarios.
 The trained artifact is committed at `spikes/models/hey_earshot.onnx` (11 KB) with the exact operating point baked into `spikes/train_wakeword.py`.
 
 Hard-won implementation lessons (these cost most of the spike time and matter for #5):
@@ -113,7 +115,7 @@ Wake-word inference itself runs on the same 1280-sample (80ms) cadence as openWa
 
 ## What this spike deliberately did not do
 
-- No real-microphone testing (synthetic audio only); #15 owns real-noise tuning.
+- No real-microphone testing (synthetic audio only); P3-01 adds reproducible synthetic-noise tuning and leaves live-room validation steps in `docs/tuning-protocol.md`.
 - No GPU/CoreML acceleration; CPU numbers already clear every target.
 - No API-mode latency (optional path, not latency-critical).
 - The wake-word model is feasibility-grade; if real-world rates disappoint in #5, the escalation path is the official openWakeWord training pipeline at full scale (thousands of generated positives, the ACAV100M precomputed negative features, and their augmentation stack) which this spike's data pipeline already mirrors in miniature.

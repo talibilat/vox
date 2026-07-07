@@ -87,8 +87,8 @@ P0-02 proved that opencode status should derive from `session.next.step.ended` w
 P1-06 proved opencode, Claude Code, and codex all pass the native adapter contract, so P2-04 shipped #14 as a generic opt-in fallback contingency rather than a replacement for current harness transports.
 P0-03 chose faster-whisper `base.en` as the default STT model with `tiny.en` as the low-latency option for #5.
 It chose Piper `en_US-lessac-medium` as the default TTS engine for #6; Kokoro should remain optional and sentence-at-a-time only.
-It showed Silero VAD has enough headroom for the 200ms barge-in target in #7, but #15 still owns real-microphone noise tuning.
-Its committed `spikes/models/hey_earshot.onnx` model is only a feasibility artifact, so #5 should treat the openWakeWord pipeline and phrase as proven enough to continue, not production-ready.
+It showed Silero VAD has enough headroom for the 200ms barge-in target in #7; P3-01 later tuned the shipped VAD default and recorded the remaining live-room checks in `docs/tuning-protocol.md`.
+Its committed `spikes/models/hey_earshot.onnx` model is only a feasibility artifact, so #5 should treat the openWakeWord pipeline and phrase as proven enough to continue, while P3-01's tuned 0.9/3 operating point is the shipped default.
 
 ## How to read this
 
