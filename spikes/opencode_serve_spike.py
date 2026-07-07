@@ -168,7 +168,7 @@ def run_turn(base, events, session_id, text):
                 newest = created
                 final = text
     if final is None:
-        raise RuntimeError("no completed assistant message found after idle")
+        raise RuntimeError("no completed assistant message found after turn completion")
     if streamed and streamed.strip() != final.strip():
         print(f"  note: streamed text differs from stored text ({streamed!r} vs {final!r})")
     return final
