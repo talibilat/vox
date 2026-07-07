@@ -6,6 +6,7 @@ real Silero VAD, real whisper STT, and the real Player; only the speaker
 sink, the TTS engine, and the agent are fakes.
 """
 
+import threading
 import time
 import wave
 from pathlib import Path
@@ -183,6 +184,37 @@ class TestInterruptibleVoiceLoop:
 
         assert loop.interrupts == 1, "the hotkey did not trigger the interrupt path"
         assert loop.latencies_ms and max(loop.latencies_ms) < 200
+
+    def test_interrupt_does_not_join_responder_before_recording_resumes(self):
+        class BlockingResponder:
+            def is_alive(self):
+                return True
+
+            def join(self, timeout=None):
+                raise AssertionError("interrupt path must not join responder")
+
+        class FakeOutput:
+            def cancel_current(self):
+                pass
+
+            def stop_and_flush(self):
+                pass
+
+        class FakeOnset:
+            def pre_roll(self):
+                return [np.zeros(FRAME_SAMPLES, dtype=np.int16)]
+
+        loop = InterruptibleVoiceLoop.__new__(InterruptibleVoiceLoop)
+        loop._interrupt_requested = threading.Event()
+        loop._responder = BlockingResponder()
+        loop._output = FakeOutput()
+        loop._onset = FakeOnset()
+        loop.interrupts = 0
+        loop.latencies_ms = []
+
+        pre_roll = loop._interrupt_playback()
+
+        assert pre_roll
 
     def test_playback_alone_does_not_self_interrupt(self):
         # After the command, the mic hears only silence (the headset

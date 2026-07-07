@@ -166,7 +166,6 @@ class InterruptibleVoiceLoop:
             latency_ms,
             self.interrupts,
         )
-        self._join_responder(timeout=10)
         return self._onset.pre_roll() if triggered_by == "voice" else []
 
     def _join_responder(self, timeout: float) -> None:

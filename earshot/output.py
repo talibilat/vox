@@ -181,7 +181,9 @@ class OutputPipeline:
 
             player = Player(SounddeviceSink(self._tts.sample_rate))
         self._player = player
-        self._cancel = threading.Event()
+        self._lock = threading.Lock()
+        self._generation = 0
+        self._cancelled_generation = 0
 
     @property
     def player(self):
@@ -190,17 +192,17 @@ class OutputPipeline:
 
     def speak_stream(self, markdown_stream: Iterable[str]) -> None:
         """Speak a streamed markdown response as it arrives."""
-        self._cancel.clear()
+        generation = self._next_generation()
         converter = _StreamConverter(self._code_blocks)
         for text in markdown_stream:
-            if self._cancel.is_set():
+            if self._cancelled(generation):
                 return  # barge-in: abandon the rest of the response
             for sentence in converter.feed(text):
-                if self._cancel.is_set():
+                if self._cancelled(generation):
                     return
                 self._synthesize(sentence)
         for sentence in converter.finish():
-            if self._cancel.is_set():
+            if self._cancelled(generation):
                 return
             self._synthesize(sentence)
 
@@ -213,7 +215,8 @@ class OutputPipeline:
         The barge-in path calls this right before stop_and_flush so no new
         synthesis lands while the queue is being cleared.
         """
-        self._cancel.set()
+        with self._lock:
+            self._cancelled_generation = self._generation
 
     def stop_and_flush(self) -> None:
         self._player.stop_and_flush()
@@ -224,3 +227,12 @@ class OutputPipeline:
     def _synthesize(self, sentence: str) -> None:
         logger.debug("speaking: %s", sentence)
         self._player.enqueue(self._tts.synthesize(sentence))
+
+    def _next_generation(self) -> int:
+        with self._lock:
+            self._generation += 1
+            return self._generation
+
+    def _cancelled(self, generation: int) -> bool:
+        with self._lock:
+            return generation <= self._cancelled_generation
