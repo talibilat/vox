@@ -1,10 +1,10 @@
 """Configuration schema, loading, and validation for Earshot.
 
-The full schema is defined here, including fields that later phases consume
-(agents map for the multi-agent conductor, barge-in settings for the
-interrupt path), so pipeline issues can build in parallel without editing
-this module. Every field is a dataclass attribute with a default; a config
-file only needs to override what it changes.
+The full schema is defined here, including fields consumed by the Phase 1
+opencode voice loop and fields that later phases consume (multi-agent
+conductor settings, barge-in settings for the interrupt path). Every field is
+a dataclass attribute with a default; a config file only needs to override what
+it changes.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ class TtsConfig:
 @dataclass
 class AgentConfig:
     harness: str = "opencode"
-    command: str | None = None  # explicit launch command override
+    command: str | None = None  # explicit opencode-compatible serve command override
     workdir: str = "~"
     model: str | None = DEFAULT_OPENCODE_MODEL  # "provider/model-id"
     tmux_pane: str | None = None  # only for a harness on the tmux fallback path
@@ -321,8 +321,8 @@ code_blocks: summarize      # fenced code blocks: summarize | skip | read
 # Spoken agent name -> how to reach that agent.
 agents:
   main:
-    harness: opencode       # opencode | claude-code | codex
-    command: null           # optional explicit launch command
+    harness: opencode       # opencode works today; claude-code/codex are reserved
+    command: null           # optional opencode-compatible serve command; --port is appended
     workdir: "~"
     model: {model}          # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path

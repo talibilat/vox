@@ -1,8 +1,8 @@
 """Daemon lifecycle: start, stop, status, and the foreground run loop.
 
-The daemon is the long-lived process that will own the audio pipeline and
-every agent process (later issues). This module only implements lifecycle
-plumbing: PID-file management, detached start, clean stop, and logging.
+The daemon is the long-lived process that owns lifecycle plumbing, the audio
+pipeline, and the configured Phase 1 agent process when the voice loop is
+enabled.
 """
 
 from __future__ import annotations

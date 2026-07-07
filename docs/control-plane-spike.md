@@ -113,6 +113,6 @@ The spike SIGKILLs the server one second after admitting a long-running prompt, 
 
 ## Implications for #8 (adapter layer)
 
-- The adapter interface can be: `spawn() -> ready`, `create_session(model) -> id`, `send(session, text) -> admitted`, `events(session) -> async stream of deltas`, `on_turn_end(finish)`, `interrupt(session)`, `shutdown()`.
+- Implemented in #8: `AgentAdapter.start()` owns the child process and creates the persistent session, `send(prompt)` yields markdown chunks until the turn completes, `stop()` shuts the process down, and `alive` reports whether the owned process is still running.
 - One process can host many sessions and one SSE connection can watch them all, so the Phase 2 Conductor does not need a process per agent for opencode.
-- Restart recovery needs an explicit orphaned-prompt check as described above.
+- Phase 1 restart recovery chooses a fresh session after a dead process, announces that session loss to the user, and retries the spoken request once; a future multi-agent Conductor can add orphaned-prompt inspection if it preserves sessions across restarts.

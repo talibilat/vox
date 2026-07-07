@@ -3,7 +3,8 @@
 Consumes frames from any AudioSource, waits for the wake word, records until
 end-of-speech, transcribes with the configured backend, and delivers plain
 text to the `on_transcript` hook. The agent loop (#8) and name parsing (#12)
-build on that hook without knowing anything about audio.
+build on that hook without knowing anything about audio; #8 is now the
+ConversationLoop consumer.
 """
 
 from __future__ import annotations
