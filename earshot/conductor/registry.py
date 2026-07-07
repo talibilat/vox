@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from earshot.agents import AgentAdapter
 from earshot.config import AgentConfig
 
-STATUSES = ("starting", "ready", "busy", "idle", "dead")
+STATUSES = ("starting", "ready", "busy", "idle", "finished", "dead")
 
 
 @dataclass
