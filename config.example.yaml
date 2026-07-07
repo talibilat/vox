@@ -37,7 +37,7 @@ agents:
     harness: opencode       # opencode | claude-code | codex
     command: null           # optional explicit launch command
     workdir: "~"
-    model: null             # "provider/model-id"; null uses the harness default
+    model: opencode/deepseek-v4-flash-free  # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:

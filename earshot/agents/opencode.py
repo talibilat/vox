@@ -68,8 +68,12 @@ class OpencodeAdapter(AgentAdapter):
             )
         except OSError as exc:
             raise AgentError(f"could not launch agent {self._name}: {exc}") from exc
-        self._wait_ready()
-        self._session_id = self._create_session()
+        try:
+            self._wait_ready()
+            self._session_id = self._create_session()
+        except Exception:
+            self.stop()
+            raise
         logger.info(
             "agent %s ready (pid %s, session %s)", self._name, self._proc.pid, self._session_id
         )
@@ -90,9 +94,12 @@ class OpencodeAdapter(AgentAdapter):
         # Subscribe before prompting so no event can be missed.
         events = self._open_events()
         try:
-            self._api(
-                "POST", f"/api/session/{self._session_id}/prompt", {"prompt": {"text": prompt}}
-            )
+            try:
+                self._api(
+                    "POST", f"/api/session/{self._session_id}/prompt", {"prompt": {"text": prompt}}
+                )
+            except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError) as exc:
+                raise AgentError(f"could not prompt agent {self._name}: {exc}") from exc
             yield from self._stream_turn(events)
         finally:
             events.close()
@@ -114,13 +121,15 @@ class OpencodeAdapter(AgentAdapter):
         raise AgentError(f"agent {self._name} did not become ready within {READY_TIMEOUT:.0f}s")
 
     def _create_session(self) -> str:
-        body: dict = {}
-        if self._config.model:
-            provider, _, model_id = self._config.model.partition("/")
-            body["model"] = {"providerID": provider, "id": model_id}
+        if not self._config.model:
+            raise AgentError(f"agent {self._name} requires a pinned provider/model-id")
+        provider, separator, model_id = self._config.model.partition("/")
+        if separator != "/" or not provider.strip() or not model_id.strip() or "/" in model_id:
+            raise AgentError(f"agent {self._name} has invalid model pin {self._config.model!r}")
+        body = {"model": {"providerID": provider, "id": model_id}}
         try:
             data = self._api("POST", "/api/session", body)
-        except (urllib.error.URLError, OSError) as exc:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError) as exc:
             raise AgentError(f"could not create a session on agent {self._name}: {exc}") from exc
         return data["data"]["id"]
 

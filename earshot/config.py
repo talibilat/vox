@@ -22,6 +22,7 @@ HARNESSES = ("opencode", "claude-code", "codex")
 BACKENDS = ("local", "api")
 TTS_ENGINES = ("piper", "kokoro")
 CODE_BLOCK_MODES = ("summarize", "skip", "read")
+DEFAULT_OPENCODE_MODEL = "opencode/deepseek-v4-flash-free"
 
 
 class ConfigError(Exception):
@@ -84,7 +85,7 @@ class AgentConfig:
     harness: str = "opencode"
     command: str | None = None  # explicit launch command override
     workdir: str = "~"
-    model: str | None = None  # "provider/model-id"; None uses the harness default
+    model: str | None = DEFAULT_OPENCODE_MODEL  # "provider/model-id"
     tmux_pane: str | None = None  # only for a harness on the tmux fallback path
 
 
@@ -193,6 +194,14 @@ def _check_str(value: object, path: str, optional: bool = False) -> None:
         _fail(path, f"expected a non-empty string, got {value!r}")
 
 
+def _check_model_pin(value: object, path: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        _fail(path, f"expected a non-empty string, got {value!r}")
+    provider, separator, model_id = value.partition("/")
+    if separator != "/" or not provider.strip() or not model_id.strip() or "/" in model_id:
+        _fail(path, f"expected provider/model-id, got {value!r}")
+
+
 def validate(config: Config) -> Config:
     """Validate every field; raise ConfigError with the key path on failure."""
     _check_str(config.wake_word.phrase, "wake_word.phrase")
@@ -236,7 +245,10 @@ def validate(config: Config) -> Config:
         _check_enum(agent.harness, HARNESSES, f"agents.{name}.harness")
         _check_str(agent.command, f"agents.{name}.command", optional=True)
         _check_str(agent.workdir, f"agents.{name}.workdir")
-        _check_str(agent.model, f"agents.{name}.model", optional=True)
+        if agent.harness == "opencode":
+            _check_model_pin(agent.model, f"agents.{name}.model")
+        else:
+            _check_str(agent.model, f"agents.{name}.model", optional=True)
         _check_str(agent.tmux_pane, f"agents.{name}.tmux_pane", optional=True)
 
     _check_range(config.barge_in.vad_threshold, 0.0, 1.0, "barge_in.vad_threshold")
@@ -312,7 +324,7 @@ agents:
     harness: opencode       # opencode | claude-code | codex
     command: null           # optional explicit launch command
     workdir: "~"
-    model: null             # "provider/model-id"; null uses the harness default
+    model: {model}          # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:
@@ -331,5 +343,6 @@ def write_default(config_path: Path) -> None:
         DEFAULT_CONFIG_TEMPLATE.format(
             log_file="~/.local/state/earshot/earshot.log",
             pid_file="~/.local/state/earshot/earshot.pid",
+            model=DEFAULT_OPENCODE_MODEL,
         )
     )

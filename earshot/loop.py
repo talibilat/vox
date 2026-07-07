@@ -33,6 +33,9 @@ class ConversationLoop:
         except AgentError as error:
             logger.warning("agent turn failed: %s", error)
             self._recover(text, error)
+        except Exception:
+            logger.exception("conversation turn failed outside the agent")
+            self._say("I could not speak the response. Check the logs.")
 
     def _speak_response(self, text: str) -> None:
         self._output.speak_stream(self._adapter.send(text))
@@ -56,6 +59,9 @@ class ConversationLoop:
         except AgentError as retry_error:
             logger.error("retry after restart failed: %s", retry_error)
             self._say("The agent failed again. Giving up on this request.")
+        except Exception:
+            logger.exception("retry after restart failed outside the agent")
+            self._say("I could not speak the response. Check the logs.")
 
     def _say(self, sentence: str) -> None:
         """Speak a status sentence, never raising into the input thread."""

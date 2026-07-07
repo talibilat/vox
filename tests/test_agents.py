@@ -16,6 +16,7 @@ import pytest
 
 from earshot.agents import AgentError, create_adapter, first_agent
 from earshot.agents.base import AgentAdapter
+from earshot.agents.opencode import OpencodeAdapter
 from earshot.config import AgentConfig, Config
 from earshot.loop import ConversationLoop
 
@@ -91,6 +92,25 @@ class TestOpencodeAdapter:
         adapter = create_adapter("main", fake_agent_config(command="/nonexistent/binary serve"))
         with pytest.raises(AgentError, match="could not launch"):
             adapter.start()
+
+    def test_start_cleans_up_process_when_startup_fails_after_spawn(self, monkeypatch):
+        command = f"{sys.executable} -c 'import time; time.sleep(60)'"
+        adapter = OpencodeAdapter("main", fake_agent_config(command=command))
+
+        def fail_ready():
+            raise AgentError("not ready")
+
+        monkeypatch.setattr(adapter, "_wait_ready", fail_ready)
+        with pytest.raises(AgentError, match="not ready"):
+            adapter.start()
+
+        assert not adapter.alive
+        assert adapter._proc is None
+
+    def test_prompt_api_failure_raises_agent_error(self, adapter):
+        adapter._session_id = "missing"
+        with pytest.raises(AgentError, match="could not prompt"):
+            list(adapter.send("hello"))
 
     def test_unknown_harness_is_rejected(self):
         with pytest.raises(NotImplementedError, match="claude-code"):
@@ -184,6 +204,22 @@ class TestConversationLoop:
                 raise AgentError("boom")
 
         adapter = FakeAdapter(["irrelevant"])
+        ConversationLoop(adapter, ExplodingOutput()).handle_transcript("hi")  # must not raise
+
+    @pytest.mark.parametrize("method", ["speak_stream", "wait_until_idle"])
+    def test_output_errors_never_escape_into_input_thread(self, method):
+        class ExplodingOutput(FakeOutput):
+            def speak_stream(self, stream):
+                if method == "speak_stream":
+                    raise RuntimeError("streaming speaker on fire")
+                super().speak_stream(stream)
+
+            def wait_until_idle(self, timeout=None):
+                if method == "wait_until_idle":
+                    raise RuntimeError("playback on fire")
+                return True
+
+        adapter = FakeAdapter(["answer"])
         ConversationLoop(adapter, ExplodingOutput()).handle_transcript("hi")  # must not raise
 
 
