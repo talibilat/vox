@@ -32,6 +32,7 @@ Projects without a repository license file, or with non-standard restrictions, m
 | faster-whisper | `SYSTRAN/faster-whisper` at `ed9a06c` | `LICENSE`: MIT License | OK to borrow patterns. | OK as a runtime dependency from a license standpoint. | License is permissive and conventional. |
 | NumPy | `numpy/numpy` at `634b462` | `LICENSE.txt`: BSD 3-Clause License | OK to borrow patterns. | OK as a runtime dependency with BSD notice handling. | Added by the audio input pipeline for frame buffers and sample conversion. |
 | sounddevice | `spatialaudio/python-sounddevice` at `88de286` | `LICENSE`: MIT License | OK to borrow patterns. | OK as a runtime dependency from a license standpoint. | Added by the audio input pipeline for PortAudio microphone capture. |
+| markdown-it-py | `executablebooks/markdown-it-py` at `2c3f71e` | `LICENSE`: MIT License | OK to borrow patterns. | OK as a runtime dependency from a license standpoint. | Added by the speech output pipeline for Markdown tokenization. |
 
 ## Loud Flags
 

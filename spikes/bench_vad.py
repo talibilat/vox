@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 import soundfile as sf
-from silero_vad import load_silero_vad, VADIterator
+from silero_vad import VADIterator, load_silero_vad
 
 SR = 16000
 CHUNK = 512  # 32ms, the size silero-vad expects at 16kHz
@@ -53,16 +53,14 @@ def main():
         assert detected_at is not None, "VAD never detected speech"
         onset_lags.append(detected_at - true_onset_s)
 
+    print(f"silero-vad onset detection ({runs} runs, threshold=0.5, {CHUNK}-sample chunks)")
     print(
-        f"silero-vad onset detection ({runs} runs, threshold=0.5, {CHUNK}-sample chunks)"
+        f"  audio-time lag from true onset: median={statistics.median(onset_lags) * 1000:.0f}ms "
+        f"worst={max(onset_lags) * 1000:.0f}ms"
     )
     print(
-        f"  audio-time lag from true onset: median={statistics.median(onset_lags)*1000:.0f}ms "
-        f"worst={max(onset_lags)*1000:.0f}ms"
-    )
-    print(
-        f"  per-chunk inference: median={statistics.median(chunk_times)*1000:.2f}ms "
-        f"worst={max(chunk_times)*1000:.2f}ms over {len(chunk_times)} chunks"
+        f"  per-chunk inference: median={statistics.median(chunk_times) * 1000:.2f}ms "
+        f"worst={max(chunk_times) * 1000:.2f}ms over {len(chunk_times)} chunks"
     )
     budget = 200
     lag = statistics.median(onset_lags) * 1000
@@ -71,7 +69,8 @@ def main():
     # cost and a generous 20ms allowance for stopping playback.
     est = lag + infer + 20
     print(
-        f"  interrupt-path estimate: {lag:.0f}ms detection + {infer:.2f}ms inference + 20ms audio-stop = {est:.0f}ms"
+        f"  interrupt-path estimate: {lag:.0f}ms detection + {infer:.2f}ms inference "
+        f"+ 20ms audio-stop = {est:.0f}ms"
     )
     print(f"  headroom vs {budget}ms budget: {budget - est:.0f}ms")
 
