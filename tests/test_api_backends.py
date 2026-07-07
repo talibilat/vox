@@ -96,7 +96,17 @@ class TestApiStt:
     def test_missing_key_env_is_actionable(self, api_server, monkeypatch):
         monkeypatch.delenv("EARSHOT_TEST_KEY")
         with pytest.raises(BackendUnavailable, match="EARSHOT_TEST_KEY"):
-            self.make(api_server)
+            self.make(api_server).transcribe(TONE, 16000)
+
+    def test_missing_key_falls_back_to_local(self, api_server, monkeypatch):
+        monkeypatch.delenv("EARSHOT_TEST_KEY")
+
+        class FakeLocal:
+            def transcribe(self, audio, sample_rate):
+                return "local fallback text"
+
+        backend = self.make(api_server, fallback=FakeLocal())
+        assert backend.transcribe(TONE, 16000) == "local fallback text"
 
     def test_http_error_is_clear(self, api_server):
         FakeOpenAiHandler.behavior = "http_error"
@@ -151,6 +161,20 @@ class TestApiTts:
         FakeOpenAiHandler.behavior = "http_error"
         with pytest.raises(BackendUnavailable, match="401"):
             list(self.make(api_server).synthesize("hello"))
+
+    def test_missing_key_falls_back_to_local(self, api_server, monkeypatch):
+        monkeypatch.delenv("EARSHOT_TEST_KEY")
+
+        class FakeLocal:
+            sample_rate = PCM_SAMPLE_RATE
+
+            def synthesize(self, text):
+                yield np.array([1, 2, 3], dtype=np.int16)
+
+        backend = self.make(api_server, fallback=FakeLocal())
+        assert np.array_equal(
+            np.concatenate(list(backend.synthesize("hello"))), np.array([1, 2, 3])
+        )
 
     def test_fallback_resamples_local_audio(self, api_server):
         FakeOpenAiHandler.behavior = "http_error"

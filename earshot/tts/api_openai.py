@@ -38,7 +38,7 @@ class ApiTtsBackend(TtsBackend):
         fallback_factory=None,
     ):
         self._base_url = base_url.rstrip("/")
-        self._api_key = read_api_key(api_key_env)
+        self._api_key_env = api_key_env
         self._model = model
         self._voice = voice
         self._fallback = fallback
@@ -73,7 +73,7 @@ class ApiTtsBackend(TtsBackend):
             ).encode(),
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._api_key}",
+                "Authorization": f"Bearer {read_api_key(self._api_key_env)}",
             },
             method="POST",
         )

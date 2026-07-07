@@ -76,7 +76,7 @@ class ApiSttBackend(SttBackend):
         fallback_factory=None,
     ):
         self._base_url = base_url.rstrip("/")
-        self._api_key = read_api_key(api_key_env)
+        self._api_key_env = api_key_env
         self._model = model
         self._fallback = fallback
         self._fallback_factory = fallback_factory
@@ -103,7 +103,7 @@ class ApiSttBackend(SttBackend):
             data=body,
             headers={
                 "Content-Type": content_type,
-                "Authorization": f"Bearer {self._api_key}",
+                "Authorization": f"Bearer {read_api_key(self._api_key_env)}",
             },
             method="POST",
         )
