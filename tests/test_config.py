@@ -15,7 +15,9 @@ def write(tmp_path, text):
 
 def test_defaults_are_valid():
     config = validate(Config())
-    assert config.agents["main"].model == "opencode/deepseek-v4-flash-free"
+    # None means "the harness's own default"; the opencode adapter pins its
+    # model itself so nothing opencode-specific leaks into other harnesses.
+    assert config.agents["main"].model is None
 
 
 def test_empty_file_loads_defaults(tmp_path):
@@ -33,6 +35,16 @@ def test_generated_default_file_loads(tmp_path):
     config = load(path)
     assert config.wake_word.sensitivity == 0.95
     assert config.daemon.log_file.startswith("~")
+
+
+def test_generated_default_agent_comments_describe_current_harnesses(tmp_path):
+    path = tmp_path / "generated.yaml"
+    write_default(path)
+    text = path.read_text()
+    assert "claude-code/codex are reserved" not in text
+    assert "opencode-compatible serve command" not in text
+    assert "opencode | claude-code | codex" in text
+    assert "claude --print, codex app-server" in text
 
 
 def test_missing_default_config_is_created(tmp_path, monkeypatch):
@@ -87,7 +99,6 @@ def test_overrides_apply(tmp_path):
         ("code_blocks: mumble", "code_blocks"),
         ("agents: {}", "agents"),
         ("agents: {main: {harness: cursor}}", "agents.main.harness"),
-        ("agents: {main: {model: null}}", "agents.main.model"),
         ("agents: {main: {model: foo}}", "agents.main.model"),
         ("agents: {main: {model: provider/}}", "agents.main.model"),
         ("agents: {main: {model: /model}}", "agents.main.model"),
@@ -149,3 +160,6 @@ def test_example_config_matches_schema():
     data = yaml.safe_load(example.read_text())
     config = validate(config_module._from_dict(data))
     assert config.wake_word.phrase == "hey earshot"
+    text = example.read_text()
+    assert "claude-code/codex are reserved" not in text
+    assert "opencode-compatible serve command" not in text

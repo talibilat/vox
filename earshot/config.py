@@ -83,9 +83,11 @@ class TtsConfig:
 @dataclass
 class AgentConfig:
     harness: str = "opencode"
-    command: str | None = None  # explicit opencode-compatible serve command override
+    command: str | None = None  # explicit harness command override
     workdir: str = "~"
-    model: str | None = DEFAULT_OPENCODE_MODEL  # "provider/model-id"
+    # "provider/model-id" (or the harness's own model naming); None uses the
+    # harness-specific default chosen by its adapter.
+    model: str | None = None
     tmux_pane: str | None = None  # only for a harness on the tmux fallback path
 
 
@@ -245,7 +247,7 @@ def validate(config: Config) -> Config:
         _check_enum(agent.harness, HARNESSES, f"agents.{name}.harness")
         _check_str(agent.command, f"agents.{name}.command", optional=True)
         _check_str(agent.workdir, f"agents.{name}.workdir")
-        if agent.harness == "opencode":
+        if agent.harness == "opencode" and agent.model is not None:
             _check_model_pin(agent.model, f"agents.{name}.model")
         else:
             _check_str(agent.model, f"agents.{name}.model", optional=True)
@@ -321,10 +323,10 @@ code_blocks: summarize      # fenced code blocks: summarize | skip | read
 # Spoken agent name -> how to reach that agent.
 agents:
   main:
-    harness: opencode       # opencode works today; claude-code/codex are reserved
-    command: null           # optional opencode-compatible serve command; --port is appended
+    harness: opencode       # opencode | claude-code | codex
+    command: null           # optional command: opencode serve, claude --print, codex app-server
     workdir: "~"
-    model: {model}          # "provider/model-id"; required for opencode
+    model: null             # null = the harness's default (opencode pins {model})
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:

@@ -69,3 +69,43 @@ def test_wake_to_spoken_agent_response():
         assert "Turn 1" in spoken
     finally:
         adapter.stop()
+
+
+@pytest.mark.parametrize("harness", ["opencode", "claude-code", "codex"])
+def test_voice_loop_matrix_switches_harness_via_config_only(harness, tmp_path, monkeypatch):
+    """The three-harness validation matrix: the identical voice chain runs
+    against each harness's adapter (driving its fake as a real child
+    process), switching ONLY the config's harness field."""
+    pytest.importorskip("faster_whisper")
+    from earshot.audio.playback import Player
+    from earshot.stt.local_whisper import LocalWhisperBackend
+    from tests.test_harness_adapters import harness_config
+
+    monkeypatch.setenv("FAKE_CLAUDE_STATE", str(tmp_path / "claude-state"))
+    config = Config()
+    config.wake_word.model_path = str(WAKE_MODEL)
+    config.wake_word.sensitivity = 0.9
+    config.wake_word.patience = 3
+    config.agents = {"main": harness_config(harness)}
+
+    from earshot.agents import first_agent
+
+    name, agent_config = first_agent(config)
+    adapter = create_adapter(name, agent_config)
+    adapter.start()
+    try:
+        tts = FakeTts()
+        output = OutputPipeline(config, player=Player(FakeSink()), tts=tts)
+        loop = ConversationLoop(adapter, output)
+        pipeline = InputPipeline(
+            config,
+            on_transcript=loop.handle_transcript,
+            source=ArraySource(read_wav("wake_then_command.wav")),
+            stt=LocalWhisperBackend(model="tiny.en"),
+        )
+        pipeline.run()
+        spoken = " ".join(tts.calls)
+        assert "you said" in spoken, f"{harness}: agent response never spoken"
+        assert "test suite" in spoken.lower(), f"{harness}: transcript did not reach the agent"
+    finally:
+        adapter.stop()

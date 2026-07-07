@@ -121,11 +121,16 @@ class OpencodeAdapter(AgentAdapter):
         raise AgentError(f"agent {self._name} did not become ready within {READY_TIMEOUT:.0f}s")
 
     def _create_session(self) -> str:
-        if not self._config.model:
-            raise AgentError(f"agent {self._name} requires a pinned provider/model-id")
-        provider, separator, model_id = self._config.model.partition("/")
+        # The spike showed opencode can resolve an unauthorized provider when
+        # no model is pinned, so this adapter always pins one. The default
+        # lives HERE because it is opencode-specific and must not leak into
+        # other harnesses through the shared AgentConfig.
+        from earshot.config import DEFAULT_OPENCODE_MODEL
+
+        model = self._config.model or DEFAULT_OPENCODE_MODEL
+        provider, separator, model_id = model.partition("/")
         if separator != "/" or not provider.strip() or not model_id.strip() or "/" in model_id:
-            raise AgentError(f"agent {self._name} has invalid model pin {self._config.model!r}")
+            raise AgentError(f"agent {self._name} has invalid model pin {model!r}")
         body = {"model": {"providerID": provider, "id": model_id}}
         try:
             data = self._api("POST", "/api/session", body)
