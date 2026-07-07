@@ -76,7 +76,11 @@ class Router:
             return
         if self._pending is not None and self._resolve_pending(utterance):
             return
-        address = extract_address(utterance, self._fleet.registry.names())
+        names = self._fleet.registry.names()
+        if len(names) == 1:
+            self._route(names[0], utterance)
+            return
+        address = extract_address(utterance, names)
         if address.name and address.confidence >= ROUTE_THRESHOLD:
             if not address.command:
                 self._switch_active(address.name)

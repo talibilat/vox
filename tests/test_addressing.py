@@ -124,6 +124,26 @@ def router(monkeypatch):
 
 
 class TestRouter:
+    def test_single_agent_fuzzy_match_passes_through(self, monkeypatch):
+        adapters = {}
+
+        def fake_create(name, _config):
+            adapters[name] = RecordingAdapter(name)
+            return adapters[name]
+
+        monkeypatch.setattr(earshot.agents, "create_adapter", fake_create)
+        config = Config()
+        config.agents = {"marvin": AgentConfig()}
+        fleet = Fleet(config, stagger_seconds=0)
+        fleet.start_all()
+        output = RecordingOutput()
+        r = Router(fleet, output)
+
+        r.handle_transcript("maybe run tests")
+
+        assert adapters["marvin"].prompts == ["maybe run tests"]
+        assert not any("Did you mean" in s for s in output.spoken)
+
     def test_addressed_command_routes_and_sets_active(self, router):
         r, adapters, _out, fleet = router
         r.handle_transcript("olivia, run the linter")
