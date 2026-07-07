@@ -9,6 +9,20 @@ description = "Voice-to-voice control for terminal coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "Md Talib" }]
+keywords = ["voice", "speech", "coding-agent", "wake-word", "tts", "stt", "opencode", "claude-code", "codex"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development",
+]
+
 dependencies = [
     "PyYAML>=6",
     "numpy>=1.24",
@@ -22,6 +36,11 @@ dependencies = [
 
 [project.scripts]
 earshot = "earshot.cli:main"
+[project.urls]
+Homepage = "https://github.com/talibilat/earshot"
+Documentation = "https://github.com/talibilat/earshot/tree/main/docs"
+Issues = "https://github.com/talibilat/earshot/issues"
+
 
 [project.optional-dependencies]
 dev = [

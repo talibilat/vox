@@ -8,7 +8,7 @@ The GitHub issue requires direct license-file verification before Earshot adapts
 
 ## Summary
 
-Earshot can use MIT for its own repository.
+Earshot uses MIT for its own repository.
 MIT is compatible with the permissive projects reviewed here and keeps the project simple for later release work.
 Apache-2.0 dependencies are also acceptable for runtime use when NOTICE and license obligations are preserved.
 MPL-2.0 is acceptable only as a separate dependency with MPL notices preserved and without copying MPL-covered source into Earshot.
@@ -42,9 +42,9 @@ Tmux-Orchestrator is blocked for copying or runtime dependency use because the c
 openWakeWord source code is Apache-2.0, but its included pretrained models are CC BY-NC-SA 4.0 and should not be default runtime artifacts for an MIT project.
 Coqui TTS is MPL-2.0, so runtime use is possible but source copying has file-level copyleft obligations.
 
-## Earshot License Recommendation
+## Earshot License
 
-Use MIT for Earshot itself.
+Earshot itself is licensed under MIT in the top-level `LICENSE` file.
 That matches the project plan expectation, keeps compatibility simple with the MIT dependencies, and remains compatible with Apache-2.0 runtime dependencies when notices are preserved.
 If Earshot later vendors or modifies MPL-2.0 code, keep those files clearly separated and comply with MPL-2.0 for the covered files.
 Do not vendor NTM or Tmux-Orchestrator code under the current findings.

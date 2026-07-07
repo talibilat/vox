@@ -1,108 +1,139 @@
-# Vox
+# Earshot
 
-Earshot is a voice-to-voice control project for terminal coding agents.
+Voice-to-voice control for terminal coding agents.
+You speak to your agents; they speak back.
+No keyboard, no reading walls of markdown, and it scales from one agent to a named fleet of sixteen you conduct by voice.
 
-## Earshot Scaffold
+> Release status: source-ready; the public demo recording and PyPI publication are release-gate tasks tracked in `docs/tickets/P3-02.md`.
 
-The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
-The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the harness-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper or OpenAI-compatible API STT, markdown-to-speakable text, local Piper or OpenAI-compatible API TTS, streamed agent responses, voice addressing, per-agent output watchers, spoken fleet status, and barge-in interruption while the agent is speaking.
-Phase 2 adds the Conductor core: the daemon starts every configured agent as a supervised fleet, staggers startup, tracks per-agent lifecycle status, restarts dead agents according to each agent's `restart_on_death` policy, routes spoken turns by addressed agent name, and buffers non-active agents' responses until they are read aloud on request.
-The implemented agent harnesses are `opencode`, `claude-code`, and `codex`, with an opt-in tmux fallback transport for harnesses whose native surface is not healthy enough.
+## What it does
 
-Install for development with:
+- **Voice-to-voice loop**: say the wake word ("Hey Earshot"), speak an instruction, the agent executes, and the response is spoken back as natural speech.
+- **Barge-in**: talk over the agent and playback stops (measured stop path: median 124ms, worst 140ms on an Apple M4 Pro), and what you said becomes the next command; no wake word needed.
+- **Speakable output**: markdown is converted before it is voiced; you will never hear "hash hash bold star star". Code blocks are summarized, skipped, or read, per config.
+- **Agent-agnostic**: works with opencode, Claude Code, and codex through each harness's native headless surface, plus a generic tmux fallback for whatever comes next.
+- **The Conductor**: configure many named agents; "marvin, run the tests" routes to marvin, follow-ups stick to whoever you addressed last, "agent status" answers with a spoken roll-call, and background agents stay silent until you ask "olivia, what's your response".
+- **Local-first**: the default stack is fully offline (openWakeWord, faster-whisper, Silero VAD, Piper). Hosted OpenAI-compatible STT/TTS are opt-in per backend, with optional automatic fallback to local.
+
+## Install
+
+From source today:
 
 ```sh
-uv pip install -e ".[dev]"
+git clone https://github.com/talibilat/earshot && cd earshot
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .
 ```
 
-Run the daemon lifecycle commands with:
+After PyPI publication, install from PyPI with the package name `earshot-cli`.
+
+Runtime requirements: Python 3.10+, a microphone and speaker (PortAudio), and at least one agent CLI on your PATH (`opencode`, `claude`, or `codex`).
+On macOS, `brew install portaudio` if sounddevice cannot find it.
+
+## Quickstart (one agent)
+
+1. Get a trained openWakeWord model for your wake phrase. The repo ships a development-grade "Hey Earshot" model at `spikes/models/hey_earshot.onnx` (train a better one with `spikes/train_wakeword.py`).
+2. Create `~/.config/earshot/config.yaml` (running `earshot start` once generates a commented default):
+
+```yaml
+wake_word:
+  model_path: /path/to/hey_earshot.onnx
+agents:
+  main:
+    harness: opencode        # or claude-code | codex
+    workdir: ~/projects/myrepo
+```
+
+3. `earshot start`, put on a headset, and say: "Hey Earshot" ... "list the files in this directory and tell me what you see".
+4. Talk over the answer whenever you want to redirect it. `earshot interrupt` is the push-to-interrupt escape hatch (bind it to a system hotkey); `earshot stop` shuts everything down, including every agent process Earshot spawned.
+
+## The fleet (multi-agent)
+
+```yaml
+agents:
+  marvin:
+    harness: opencode
+    workdir: ~/projects/backend
+  olivia:
+    harness: claude-code
+    workdir: ~/projects/frontend
+  sebastian:
+    harness: codex
+    workdir: ~/projects/infra
+```
+
+- "marvin, run the tests" routes to marvin and makes him the active agent; bare follow-ups keep going to him.
+- Everyone else works in silence; nothing is ever spoken unprompted.
+- "olivia, what's your response" reads back exactly olivia's latest output.
+- "agent status" answers like "marvin and olivia have finished; sebastian is still working."
+- A garbled name gets "Did you mean marvin?" instead of a silent misroute; answer "yes" to confirm.
+- Earshot spawns and supervises every agent itself (staggered startup, per-agent `restart_on_death` policy); nothing is started by hand.
+- Pick phonetically distinct, multi-syllable names; multi-agent config validation warns about risky ones.
+
+## Local vs API mode
+
+Local is the default and works fully offline.
+Any backend can be switched independently:
+
+```yaml
+stt:
+  backend: api               # hosted transcription
+  api:
+    api_key_env: OPENAI_API_KEY
+    fallback_to_local: true  # degrade to faster-whisper on API failure
+tts:
+  backend: local             # keep the local Piper voice
+```
+
+API keys are only ever read from the environment variable you name; never put a key in YAML.
+
+## Tuned defaults
+
+The shipped thresholds come from a measured sweep (see `docs/tuning-protocol.md` for the full tables and the reproduction command):
+
+- Barge-in VAD threshold 0.6: zero false interrupts from music and keyboard noise in the sweep, with no onset-latency cost over the old default.
+- Wake word at sensitivity 0.9 / patience 3: zero false fires across the adversarial scenario set while detecting every positive.
+- Interrupt stop path re-validated post-tuning: median 124ms, worst 140ms.
+- Voice addressing: 16/16 spoken commands routed correctly through real STT in the tuning run.
+- Assumption to know about: barge-in listens while the agent talks, so use a headset (or modest speaker volume); a VAD cannot tell your voice from a nearby conversation.
+
+## Documentation
+
+- [Config reference](docs/config-reference.md) covers every knob in the schema.
+- [Tuning protocol and numbers](docs/tuning-protocol.md)
+- [Control-plane verdicts per harness](docs/control-plane-verdicts.md)
+- [Latency and wake-word spike numbers](docs/latency-spike.md)
+- [opencode serve transport notes](docs/control-plane-spike.md)
+- [Dependency license audit](docs/licenses.md)
+- [Demo recording script](docs/demo-script.md)
+- Per-ticket engineering notes live under `docs/tickets/`.
+
+## Relationship to Claude Code's voice mode
+
+Claude Code's native voice input is push-to-talk speech-to-text only; there is no spoken response, wake word, or barge-in, and open feature requests (anthropics/claude-code #34305, #36745) ask for exactly the loop Earshot provides.
+Earshot treats that as validation: it is the wrapper that gives any terminal agent a full voice conversation, not a competitor to any single harness.
+
+## Parking lot (deliberate non-features, for now)
+
+- Per-agent TTS voices (instant recognizability in a fleet).
+- A notification chime when a background agent finishes.
+- "Read the last thing again."
+
+Earshot is a personal tool first: no SLAs, no multi-user, no production hardening.
+
+## Development
 
 ```sh
-earshot start
-earshot status
-earshot interrupt
-earshot stop
+git clone https://github.com/talibilat/earshot && cd earshot
+uv venv && uv pip install -e ".[dev]"
+pytest -q        # 255 tests; heavier voice tests skip without the audio deps
+ruff check earshot tests
 ```
 
-Use `earshot start --foreground` for a foreground development run.
-Use `earshot --config PATH ...` to point at a non-default config file.
-The voice loop starts only when `wake_word.model_path` points at a trained openWakeWord `.onnx` model; without it, the daemon logs that the voice loop is disabled.
-The committed feasibility model is `spikes/models/hey_earshot.onnx`; it is useful for development but not production-ready.
-The shipped wake-word and barge-in defaults are tuned from the reproducible P3-01 sweep in `docs/tuning-protocol.md`.
-While the daemon is responding, speaking over playback interrupts the agent, stops synthesis and speaker output, and records the interruption as the next command without requiring the wake word again.
-Use `earshot interrupt` as the push-to-interrupt escape hatch; bind that command in your OS or launcher if you want a one-keystroke hotkey.
+Development notes: `earshot start --foreground` runs in the terminal; the voice loop needs `wake_word.model_path` set (the committed model at `spikes/models/hey_earshot.onnx` is development-grade).
+The name situation: the product is Earshot, the pip package is `earshot-cli` (`earshot` was taken on PyPI), and the public repository URL is `github.com/talibilat/earshot`.
 
-On first run without `--config`, Earshot creates `~/.config/earshot/config.yaml` from the same template committed as `config.example.yaml`.
-Every config key is optional, unknown keys and duplicate YAML keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, optional tmux fallback transport, restart policy, barge-in, and daemon paths.
-Configure named agents under `agents` with `agents.<name>.harness` set to `opencode`, `claude-code`, or `codex`, plus an `agents.<name>.workdir`; Earshot owns the harness processes, starts the full fleet when the voice loop is enabled, and routes addressed utterances like `<name>, run the tests` to that agent's watcher.
-Set `agents.<name>.tmux_pane` only to force that agent through the tmux fallback transport; the value is the tmux session name Earshot owns, and `agents.<name>.command` can override the CLI launched inside it.
-Set `agents.<name>.model` only when you want to override a harness default; `model: null` uses the adapter default, and opencode validates explicit overrides in `provider/model-id` form.
-Agent names are spoken names, so validation warns when names are short or too similar for reliable speech recognition; fuzzy matching handles common vowel-level mishearings, ambiguous matches ask for confirmation aloud, and unaddressed follow-ups go to the active agent.
-Only the active agent's turn streams to the speaker as it arrives; other agents work silently, move to `finished` when an unread response is buffered, and are read aloud with requests like `<name>, what's your response`.
-Fleet-status phrases such as `agent status` speak a grouped roll-call of finished, working, idle, and not-running agents.
-If an agent fails mid-turn, Earshot buffers a speakable failure response and speaks feedback only when that agent is active; if the process died, the Conductor supervisor applies the agent's `restart_on_death` policy.
-The Conductor supervisor owns restarts for all daemon-managed agents, active included; the older active-agent restart exemption applies only to the legacy direct `ConversationLoop` fallback.
-Local STT is implemented with faster-whisper, and local TTS is implemented with Piper.
-API STT and TTS use OpenAI-compatible `/audio/transcriptions` and `/audio/speech` endpoints, read the API key from the environment variable named by `stt.api.api_key_env` or `tts.api.api_key_env`, and can fall back to the local backend when `fallback_to_local` is true; Kokoro remains a reserved local TTS engine and raises today.
-Speech output converts streamed Markdown to speakable text sentence-by-sentence; `code_blocks` controls whether fenced code blocks are summarized, skipped, or read aloud.
+## License
 
-## Docs
-
-- [Issue dependency graph](docs/dependency-graph.md)
-- [P1-01 repo scaffold notes](docs/tickets/P1-01.md)
-- [P1-02 audio input notes](docs/tickets/P1-02.md)
-- [P1-03 speech output notes](docs/tickets/P1-03.md)
-- [P1-04 barge-in notes](docs/tickets/P1-04.md)
-- [P1-05 agent adapter notes](docs/tickets/P1-05.md)
-- [P1-07 API backend notes](docs/tickets/P1-07.md)
-- [P1-06 harness adapter notes](docs/tickets/P1-06.md)
-- [P2-01 Conductor core notes](docs/tickets/P2-01.md)
-- [P2-02 voice addressing notes](docs/tickets/P2-02.md)
-- [P2-03 output watcher notes](docs/tickets/P2-03.md)
-- [P2-04 tmux fallback notes](docs/tickets/P2-04.md)
-- [P3-01 tuning protocol](docs/tuning-protocol.md)
-- [P3-01 tuning notes](docs/tickets/P3-01.md)
-- [Example Earshot config](config.example.yaml)
-- [P0-02 control-plane spike](docs/control-plane-spike.md)
-- [Per-harness control-plane verdicts](docs/control-plane-verdicts.md)
-- [P0-02 process notes](docs/tickets/P0-02.md)
-
-## Project Documentation
-
-- [Issue dependency graph](docs/dependency-graph.md) maps the implementation order across project phases.
-- [P1-01 repo scaffold notes](docs/tickets/P1-01.md) record the package, daemon, config schema, and validation work.
-- [P1-02 audio input notes](docs/tickets/P1-02.md) record the wake-word, endpointing, microphone, and local STT pipeline work.
-- [P1-03 speech output notes](docs/tickets/P1-03.md) record the markdown-to-speech, local Piper TTS, and interruptible playback work.
-- [P1-04 barge-in notes](docs/tickets/P1-04.md) record the VAD interruption loop, push-to-interrupt command, and target-hardware latency validation work.
-- [P1-05 agent adapter notes](docs/tickets/P1-05.md) record the opencode adapter, original single-agent voice loop, and daemon agent-process ownership work.
-- [P1-07 API backend notes](docs/tickets/P1-07.md) record the OpenAI-compatible STT/TTS backends, API failure handling, and optional local fallback work.
-- [P1-06 harness adapter notes](docs/tickets/P1-06.md) record the Claude Code and codex adapters plus the three-harness validation matrix.
-- [P2-01 Conductor core notes](docs/tickets/P2-01.md) record the multi-agent fleet lifecycle, per-agent restart policy, duplicate-name rejection, phonetic naming warnings, and live 16-agent validation.
-- [P2-02 voice addressing notes](docs/tickets/P2-02.md) record fuzzy leading-name routing, active-agent switching, clarification prompts, fleet phrase protection, and the router handoff from the voice loop.
-- [P2-03 output watcher notes](docs/tickets/P2-03.md) record per-agent watcher threads, silent background buffering, readback requests, natural fleet status, and watcher-owned failure isolation.
-- [P2-04 tmux fallback notes](docs/tickets/P2-04.md) record the generic opt-in tmux transport, session ownership, literal prompt delivery, capture-pane output cleanup, and quiescence-based completion limits.
-- [P3-01 tuning protocol](docs/tuning-protocol.md) records the reproducible VAD, wake-word, addressing, and post-tuning interrupt measurements.
-- [P3-01 tuning notes](docs/tickets/P3-01.md) record the shipped tuning defaults and remaining manual validation steps.
-- [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
-- [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
-- [P0-01 VoiceMode notes](docs/voicemode-notes.md) record the VoiceMode design review and local Claude Code MCP smoke test.
-- [P0-02 control-plane spike](docs/control-plane-spike.md) records the `opencode serve` transport verdict, event shapes, and adapter implications.
-- [Per-harness control-plane verdicts](docs/control-plane-verdicts.md) record the current native transport verdicts for opencode, Claude Code, and codex.
-- [P0-03 voice-stack spike](docs/latency-spike.md) records STT, TTS, VAD, and wake-word latency results plus the committed feasibility model.
-
-## Ticket Notes
-
-- [P0-01 process notes](docs/tickets/P0-01.md)
-- [P0-02 process notes](docs/tickets/P0-02.md)
-- [P0-03 process notes](docs/tickets/P0-03.md)
-- [P1-02 process notes](docs/tickets/P1-02.md)
-- [P1-03 process notes](docs/tickets/P1-03.md)
-- [P1-04 process notes](docs/tickets/P1-04.md)
-- [P1-05 process notes](docs/tickets/P1-05.md)
-- [P1-07 process notes](docs/tickets/P1-07.md)
-- [P1-06 process notes](docs/tickets/P1-06.md)
-- [P2-01 process notes](docs/tickets/P2-01.md)
-- [P2-02 process notes](docs/tickets/P2-02.md)
-- [P2-03 process notes](docs/tickets/P2-03.md)
-- [P2-04 process notes](docs/tickets/P2-04.md)
-- [P3-01 process notes](docs/tickets/P3-01.md)
+MIT (see LICENSE). Dependency licensing was audited up front; see docs/licenses.md.
