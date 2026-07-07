@@ -49,6 +49,7 @@ class SttApiConfig:
     base_url: str = "https://api.openai.com/v1"
     api_key_env: str = "OPENAI_API_KEY"
     model: str = "whisper-1"
+    fallback_to_local: bool = False  # degrade to the local backend on API failure
 
 
 @dataclass
@@ -71,6 +72,7 @@ class TtsApiConfig:
     api_key_env: str = "OPENAI_API_KEY"
     model: str = "tts-1"
     voice: str = "alloy"
+    fallback_to_local: bool = False  # degrade to the local backend on API failure
 
 
 @dataclass
@@ -194,6 +196,11 @@ def _check_str(value: object, path: str, optional: bool = False) -> None:
         _fail(path, f"expected a non-empty string, got {value!r}")
 
 
+def _check_bool(value: object, path: str) -> None:
+    if not isinstance(value, bool):
+        _fail(path, f"expected true or false, got {value!r}")
+
+
 def _check_model_pin(value: object, path: str) -> None:
     if not isinstance(value, str) or not value.strip():
         _fail(path, f"expected a non-empty string, got {value!r}")
@@ -221,6 +228,7 @@ def validate(config: Config) -> Config:
     _check_str(config.stt.api.base_url, "stt.api.base_url")
     _check_str(config.stt.api.api_key_env, "stt.api.api_key_env")
     _check_str(config.stt.api.model, "stt.api.model")
+    _check_bool(config.stt.api.fallback_to_local, "stt.api.fallback_to_local")
 
     _check_enum(config.tts.backend, BACKENDS, "tts.backend")
     _check_enum(config.tts.local.engine, TTS_ENGINES, "tts.local.engine")
@@ -235,6 +243,7 @@ def validate(config: Config) -> Config:
     _check_str(config.tts.api.api_key_env, "tts.api.api_key_env")
     _check_str(config.tts.api.model, "tts.api.model")
     _check_str(config.tts.api.voice, "tts.api.voice")
+    _check_bool(config.tts.api.fallback_to_local, "tts.api.fallback_to_local")
 
     _check_enum(config.code_blocks, CODE_BLOCK_MODES, "code_blocks")
 
@@ -301,8 +310,9 @@ stt:
     compute_type: int8
   api:
     base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
+    api_key_env: OPENAI_API_KEY   # name of the env var holding the key; never a literal key
     model: whisper-1
+    fallback_to_local: false      # degrade to the local backend on API failure
 
 tts:
   backend: local            # local works today; api is reserved for #10
@@ -312,9 +322,10 @@ tts:
     speed: 1.0
   api:
     base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
+    api_key_env: OPENAI_API_KEY   # name of the env var holding the key; never a literal key
     model: tts-1
     voice: alloy
+    fallback_to_local: false      # degrade to the local backend on API failure
 
 code_blocks: summarize      # fenced code blocks: summarize | skip | read
 

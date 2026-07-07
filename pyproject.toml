@@ -17,6 +17,7 @@ dependencies = [
     "sounddevice>=0.4",
     "piper-tts>=1.3",
     "markdown-it-py>=3",
+    "scipy>=1.10",
 ]
 
 [project.scripts]

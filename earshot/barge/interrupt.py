@@ -142,7 +142,21 @@ class InterruptibleVoiceLoop:
         return worker_busy or not self._output.wait_until_idle(timeout=0)
 
     def _dispatch(self, audio: np.ndarray) -> None:
-        text = self._stt.transcribe(audio, SAMPLE_RATE)
+        try:
+            text = self._stt.transcribe(audio, SAMPLE_RATE)
+        except Exception:
+            # An unreachable API backend (or any STT failure) must produce
+            # spoken feedback, not a dead daemon.
+            logger.exception("transcription failed")
+            self._join_responder(timeout=30)
+            self._responder = threading.Thread(
+                target=self._conversation.say,
+                args=("I could not transcribe that. Check the logs.",),
+                daemon=True,
+                name="responder",
+            )
+            self._responder.start()
+            return
         if not text:
             logger.info("nothing transcribed, back to listening")
             return

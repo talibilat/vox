@@ -14,8 +14,9 @@ stt:
     compute_type: int8
   api:
     base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
+    api_key_env: OPENAI_API_KEY   # name of the env var holding the key; never a literal key
     model: whisper-1
+    fallback_to_local: false      # degrade to the local backend on API failure
 
 tts:
   backend: local            # local works today; api is reserved for #10
@@ -25,9 +26,10 @@ tts:
     speed: 1.0
   api:
     base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
+    api_key_env: OPENAI_API_KEY   # name of the env var holding the key; never a literal key
     model: tts-1
     voice: alloy
+    fallback_to_local: false      # degrade to the local backend on API failure
 
 code_blocks: summarize      # fenced code blocks: summarize | skip | read
 
@@ -37,7 +39,7 @@ agents:
     harness: opencode       # opencode works today; claude-code/codex are reserved
     command: null           # optional opencode-compatible serve command; --port is appended
     workdir: "~"
-    model: opencode/deepseek-v4-flash-free  # "provider/model-id"; required for opencode
+    model: opencode/deepseek-v4-flash-free          # "provider/model-id"; required for opencode
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:
