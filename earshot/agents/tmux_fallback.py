@@ -38,7 +38,9 @@ DEFAULT_COMMANDS = {"opencode": "opencode", "claude-code": "claude", "codex": "c
 POLL_SECONDS = 0.4
 STABLE_SECONDS = 2.0  # unchanged output for this long = turn finished
 TURN_TIMEOUT = 300.0
-_ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[=>]|[\x00-\x08\x0b-\x1f\x7f]")
+_ANSI = re.compile(
+    r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-9;?]*[a-zA-Z]|\x1b[=>]|[\x00-\x08\x0b-\x1f\x7f]"
+)
 
 
 def _strip_ansi(text: str) -> str:
@@ -101,7 +103,7 @@ class TmuxAgentAdapter(AgentAdapter):
             raise AgentError(f"agent {self._name} is not running")
         before = self._capture()
         self._deliver(prompt)
-        yield self._wait_for_stable_output(before, prompt)
+        yield from self._wait_for_stable_output(before, prompt)
 
     # --- internals -----------------------------------------------------
 
@@ -112,19 +114,32 @@ class TmuxAgentAdapter(AgentAdapter):
         if "\n" in prompt:
             # Multiline goes through a paste buffer; send-keys would submit
             # on the first newline.
-            subprocess.run(
-                ["tmux", "load-buffer", "-b", f"earshot-{self._name}", "-"],
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=15,
+            self._check_delivery(
+                subprocess.run(
+                    ["tmux", "load-buffer", "-b", f"earshot-{self._name}", "-"],
+                    input=prompt,
+                    text=True,
+                    capture_output=True,
+                    timeout=15,
+                )
             )
-            self._tmux("paste-buffer", "-d", "-b", f"earshot-{self._name}", "-t", self._session)
+            self._check_delivery(
+                self._tmux("paste-buffer", "-d", "-b", f"earshot-{self._name}", "-t", self._session)
+            )
         else:
             # Literal mode so the prompt's characters are never interpreted
             # as key names.
-            self._tmux("send-keys", "-t", self._session, "-l", "--", prompt)
-        self._tmux("send-keys", "-t", self._session, "Enter")
+            self._check_delivery(self._tmux("send-keys", "-t", self._session, "-l", "--", prompt))
+        self._check_delivery(self._tmux("send-keys", "-t", self._session, "Enter"))
+
+    def _check_delivery(self, result: subprocess.CompletedProcess) -> None:
+        if result.returncode != 0:
+            detail = (
+                result.stderr.strip()
+                or result.stdout.strip()
+                or f"exit code {result.returncode}"
+            )
+            raise AgentError(f"could not deliver prompt to agent {self._name}: {detail}")
 
     def _capture(self) -> str:
         result = self._tmux("capture-pane", "-t", self._session, "-p", "-S", "-2000")
@@ -132,7 +147,7 @@ class TmuxAgentAdapter(AgentAdapter):
             raise AgentError(f"lost the tmux session for agent {self._name}")
         return result.stdout
 
-    def _wait_for_stable_output(self, before: str, prompt: str) -> str:
+    def _wait_for_stable_output(self, before: str, prompt: str) -> Iterator[str]:
         deadline = time.time() + TURN_TIMEOUT
         last = before
         stable_since: float | None = None
@@ -142,26 +157,33 @@ class TmuxAgentAdapter(AgentAdapter):
                 raise AgentError(f"agent {self._name} died mid-turn")
             current = self._capture()
             if current != last:
+                chunk = self._extract_response(last, current, prompt)
                 last = current
                 stable_since = None
+                if chunk:
+                    yield chunk
                 continue
             if current == before:
                 continue  # nothing has happened yet
             if stable_since is None:
                 stable_since = time.time()
             elif time.time() - stable_since >= STABLE_SECONDS:
-                return self._extract_response(before, current, prompt)
+                return
         raise AgentError(f"agent {self._name} stalled mid-turn")
 
     def _extract_response(self, before: str, after: str, prompt: str) -> str:
         before_lines = before.rstrip("\n").splitlines()
         after_lines = after.rstrip("\n").splitlines()
-        # Drop the longest common prefix of lines: what was already on screen.
         common = 0
         for old, new in zip(before_lines, after_lines, strict=False):
             if old != new:
                 break
             common += 1
+        if common == 0:
+            for overlap in range(min(len(before_lines), len(after_lines)), 0, -1):
+                if before_lines[-overlap:] == after_lines[:overlap]:
+                    common = overlap
+                    break
         fresh = [_strip_ansi(line) for line in after_lines[common:]]
         # Drop echoed prompt lines so the user's own words are not read back.
         prompt_lines = {line.strip() for line in prompt.splitlines() if line.strip()}

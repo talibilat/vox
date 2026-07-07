@@ -12,7 +12,7 @@ import pytest
 
 import earshot.agents
 from earshot.agents import AgentError, create_adapter
-from earshot.agents.tmux_fallback import TmuxAgentAdapter
+from earshot.agents.tmux_fallback import TmuxAgentAdapter, _strip_ansi
 from earshot.config import AgentConfig, Config
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux not installed")
@@ -45,6 +45,13 @@ def has_session(session: str) -> bool:
     return (
         subprocess.run(["tmux", "has-session", "-t", session], capture_output=True).returncode == 0
     )
+
+
+def bare_adapter() -> TmuxAgentAdapter:
+    adapter = object.__new__(TmuxAgentAdapter)
+    adapter._name = "fallback"
+    adapter._session = "earshot-test-bare"
+    return adapter
 
 
 def test_tmux_pane_field_selects_the_fallback_adapter():
@@ -83,6 +90,54 @@ def test_multiline_prompt_via_paste_buffer(adapter):
     response = "".join(adapter.send(prompt))
     for line in prompt.splitlines():
         assert f"GOT: {line}" in response
+
+
+def test_prompt_delivery_failure_raises_immediately(monkeypatch):
+    adapter = bare_adapter()
+
+    def fail_paste(*_args):
+        return subprocess.CompletedProcess(["tmux"], 1, "", "no pane")
+
+    monkeypatch.setattr(adapter, "_tmux", fail_paste)
+    with pytest.raises(AgentError, match="deliver prompt"):
+        adapter._deliver("hello")
+
+
+def test_multiline_load_buffer_failure_raises_immediately(monkeypatch):
+    adapter = bare_adapter()
+
+    def fail_load_buffer(*_args, **_kwargs):
+        return subprocess.CompletedProcess(["tmux"], 1, "", "buffer failed")
+
+    monkeypatch.setattr(subprocess, "run", fail_load_buffer)
+    with pytest.raises(AgentError, match="deliver prompt"):
+        adapter._deliver("hello\nthere")
+
+
+def test_send_yields_each_stable_wait_chunk(monkeypatch):
+    adapter = bare_adapter()
+    monkeypatch.setattr(TmuxAgentAdapter, "alive", property(lambda _self: True))
+    monkeypatch.setattr(adapter, "_capture", lambda: "before")
+    monkeypatch.setattr(adapter, "_deliver", lambda _prompt: None)
+    monkeypatch.setattr(
+        adapter,
+        "_wait_for_stable_output",
+        lambda _before, _prompt: iter(["first chunk", "second chunk"]),
+    )
+
+    assert list(adapter.send("hello")) == ["first chunk", "second chunk"]
+
+
+def test_extract_response_uses_overlap_when_capture_window_slides():
+    adapter = bare_adapter()
+    before = "\n".join(f"old line {index}" for index in range(2000))
+    after = "\n".join([*(f"old line {index}" for index in range(1, 2000)), "new answer"])
+
+    assert adapter._extract_response(before, after, "prompt") == "new answer"
+
+
+def test_strips_osc_sequences_terminated_by_st():
+    assert _strip_ansi("before\x1b]0;pane title\x1b\\after") == "beforeafter"
 
 
 def test_multi_turn_session_persists(adapter):
