@@ -7,6 +7,11 @@ from earshot.tts.base import TtsBackend
 def create_backend(config: Config) -> TtsBackend:
     """Instantiate the TTS backend selected in config."""
     if config.tts.backend == "local":
+        if config.tts.local.engine != "piper":
+            raise NotImplementedError(
+                f"local TTS engine {config.tts.local.engine!r} is not implemented; "
+                "only 'piper' works today"
+            )
         from earshot.tts.local_piper import PiperBackend
 
         return PiperBackend(voice=config.tts.local.voice, speed=config.tts.local.speed)

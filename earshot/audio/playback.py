@@ -48,6 +48,8 @@ class Player:
         self._sink = sink
         self._queue: queue.Queue[np.ndarray | None] = queue.Queue()
         self._interrupt = threading.Event()
+        self._lock = threading.Lock()
+        self._generation = 0
         self._idle = threading.Event()
         self._idle.set()
         self._closed = False
@@ -56,17 +58,25 @@ class Player:
 
     def enqueue(self, chunks: Iterator[np.ndarray] | np.ndarray) -> None:
         """Queue audio for playback. Accepts one array or an iterator."""
+        with self._lock:
+            if self._interrupt.is_set():
+                return
+            generation = self._generation
         if isinstance(chunks, np.ndarray):
             chunks = iter([chunks])
         for chunk in chunks:
-            if self._interrupt.is_set():
+            with self._lock:
+                stale = generation != self._generation or self._interrupt.is_set()
+            if stale:
                 return  # synthesis backlog is dropped during an interrupt
             self._idle.clear()
             self._queue.put(chunk)
 
     def stop_and_flush(self) -> None:
         """Halt current audio and drop everything queued. The barge-in hook."""
-        self._interrupt.set()
+        with self._lock:
+            self._generation += 1
+            self._interrupt.set()
         try:
             while True:
                 self._queue.get_nowait()
@@ -76,7 +86,8 @@ class Player:
         # Wait for the worker to acknowledge before accepting new audio, so
         # a chunk played right after an interrupt cannot be a stale one.
         self._idle.wait(timeout=2)
-        self._interrupt.clear()
+        with self._lock:
+            self._interrupt.clear()
 
     def wait_until_idle(self, timeout: float | None = None) -> bool:
         """Block until everything queued has been played."""

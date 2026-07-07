@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import re
 
-# A sentence ends at . ! or ? followed by whitespace (or end of a paragraph).
+# A sentence ends at . ! or ? followed by whitespace or the current buffer end.
 # A closing quote/paren may sit between the punctuation and the whitespace.
-_BOUNDARY = re.compile(r'([.!?][)"\']?)(\s+)')
+_BOUNDARY = re.compile(r'([.!?][)"\']?)(\s+|$)')
 
 # Common abbreviations that end with a period but do not end a sentence.
 _NON_TERMINAL = re.compile(r"(?:\b(?:e\.g|i\.e|etc|vs|Mr|Mrs|Ms|Dr|St|No)\.|\b[A-Za-z]\.|\d\.)$")

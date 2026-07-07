@@ -113,6 +113,11 @@ class TestChunker:
         assert chunker.feed("pass. Now the") == ["The tests pass."]
         assert chunker.flush() == ["Now the"]
 
+    def test_sentence_completes_at_end_of_stream_chunk(self):
+        chunker = SentenceChunker()
+        assert chunker.feed("Done.") == ["Done."]
+        assert chunker.flush() == []
+
     def test_multiple_sentences_in_one_feed(self):
         chunker = SentenceChunker()
         out = chunker.feed("One. Two! Three? Four")

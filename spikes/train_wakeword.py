@@ -305,10 +305,12 @@ def stage_test(workdir):
     n_pos = results["tp"] + results["fn"]
     n_neg = results["tn"] + results["fp"]
     print(
-        f"positives: {results['tp']}/{n_pos} detected, false-negative rate {results['fn']/n_pos:.0%}"
+        f"positives: {results['tp']}/{n_pos} detected, "
+        f"false-negative rate {results['fn']/n_pos:.0%}"
     )
     print(
-        f"negatives: {results['fp']}/{n_neg} false triggers, false-positive rate {results['fp']/n_neg:.0%}"
+        f"negatives: {results['fp']}/{n_neg} false triggers, "
+        f"false-positive rate {results['fp']/n_neg:.0%}"
     )
 
 

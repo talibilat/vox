@@ -38,7 +38,9 @@ def main():
         times, text = bench(name, wav, runs)
         print(f"model={name} runs={runs}")
         print(
-            f"  median={statistics.median(times)*1000:.0f}ms worst={max(times)*1000:.0f}ms best={min(times)*1000:.0f}ms"
+            f"  median={statistics.median(times)*1000:.0f}ms "
+            f"worst={max(times)*1000:.0f}ms "
+            f"best={min(times)*1000:.0f}ms"
         )
         print(f"  transcript: {text[:120]}")
 

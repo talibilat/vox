@@ -3,6 +3,7 @@ audio device or voice model is needed. A separate Piper test exercises the
 real engine when installed.
 """
 
+import importlib.util
 import threading
 import time
 from collections.abc import Iterator
@@ -13,6 +14,7 @@ import pytest
 from earshot.audio.playback import Player
 from earshot.config import Config
 from earshot.output import OutputPipeline
+from earshot.tts import create_backend
 
 
 class FakeSink:
@@ -88,6 +90,26 @@ class TestPlayer:
         assert sink.total_samples() == before + 1024
         player.close()
 
+    def test_stop_drops_synthesis_that_yields_after_interrupt(self):
+        sink = FakeSink()
+        player = Player(sink)
+        release = threading.Event()
+
+        def slow_chunks():
+            release.wait(timeout=5)
+            yield np.ones(1024, dtype=np.int16)
+
+        thread = threading.Thread(target=lambda: player.enqueue(slow_chunks()))
+        thread.start()
+
+        player.stop_and_flush()
+        release.set()
+        thread.join(timeout=5)
+        time.sleep(0.05)
+
+        assert sink.total_samples() == 0
+        player.close()
+
 
 class TestOutputPipeline:
     def make(self, code_blocks="summarize"):
@@ -152,6 +174,14 @@ class TestOutputPipeline:
         assert "1 line py code block" in spoken
         assert "After." in spoken
 
+    def test_table_without_leading_pipe_is_buffered_until_complete(self):
+        pipeline, tts, _ = self.make()
+        pipeline.speak_stream(["Status | Notes\n--- | ---\nOK. | Done.\n\nAfter.\n"])
+
+        assert all("|" not in call for call in tts.calls)
+        assert "OK" in " ".join(tts.calls)
+        assert "After." in " ".join(tts.calls)
+
     def test_stop_and_flush_passthrough(self):
         pipeline, _tts, sink = self.make()
         pipeline.speak("A sentence to interrupt.")
@@ -161,9 +191,15 @@ class TestOutputPipeline:
         assert sink.total_samples() == settled
 
 
-@pytest.mark.skipif(
-    pytest.importorskip("piper", reason="piper not installed") is None, reason="piper"
-)
+def test_create_backend_rejects_unimplemented_local_engine():
+    config = Config()
+    config.tts.local.engine = "kokoro"
+
+    with pytest.raises(NotImplementedError, match="kokoro"):
+        create_backend(config)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("piper") is None, reason="piper not installed")
 class TestPiperBackend:
     def test_synthesizes_offline(self, tmp_path):
         from earshot.tts.local_piper import VOICES_DIR, PiperBackend

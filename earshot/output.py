@@ -22,7 +22,8 @@ from earshot.tts import TtsBackend, create_backend
 logger = logging.getLogger("earshot.output")
 
 _FENCE = re.compile(r"^\s*(```|~~~)")
-_TABLE_LINE = re.compile(r"^\s*\|")
+_TABLE_LEADING_PIPE = re.compile(r"^\s*\|")
+_TABLE_SEPARATOR = re.compile(r"^\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 
 
 def _inline_balanced(text: str) -> bool:
@@ -49,6 +50,7 @@ class _StreamConverter:
         self._fed = 0  # how much of the partial line already reached the chunker
         self._fence: list[str] | None = None  # open fence lines
         self._table: list[str] | None = None  # open table lines
+        self._pending_table_header: str | None = None
         self._chunker = SentenceChunker()
         self._held = ""  # sentences held back until inline markup balances
 
@@ -64,6 +66,7 @@ class _StreamConverter:
         if (
             self._fence is None
             and self._table is None
+            and self._pending_table_header is None
             and len(self._partial) > self._fed
             and not self._maybe_structural(self._partial)
         ):
@@ -76,6 +79,10 @@ class _StreamConverter:
         if self._partial:
             out.extend(self._line(self._partial))
             self._partial = ""
+        if self._pending_table_header is not None:
+            header = self._pending_table_header
+            self._pending_table_header = None
+            out.extend(self._stream_text(header + "\n"))
         if self._fence is not None:  # unterminated fence: treat as closed
             out.extend(self._close_fence())
         if self._table is not None:
@@ -89,7 +96,7 @@ class _StreamConverter:
     @staticmethod
     def _maybe_structural(partial: str) -> bool:
         head = partial.lstrip()
-        return not head or head[0] in "`~|"
+        return not head or head[0] in "`~|" or "|" in head
 
     def _line(self, line: str) -> list[str]:
         unfed = line[self._fed :]
@@ -103,17 +110,30 @@ class _StreamConverter:
             out = self._end_text_run()
             self._fence = [line]
             return out
-        if _TABLE_LINE.match(line):
-            if self._table is None:
-                out = self._end_text_run()
-                self._table = [line]
-                return out
-            self._table.append(line)
-            return []
         if self._table is not None:
+            if "|" in line:
+                self._table.append(line)
+                return []
             out = self._close_table()
             out.extend(self._line(line))
             return out
+        if _TABLE_LEADING_PIPE.match(line):
+            out = self._end_text_run()
+            self._table = [line]
+            return out
+        if self._pending_table_header is not None:
+            header = self._pending_table_header
+            self._pending_table_header = None
+            if _TABLE_SEPARATOR.match(line):
+                out = self._end_text_run()
+                self._table = [header, line]
+                return out
+            out = self._stream_text(header + "\n")
+            out.extend(self._line(line))
+            return out
+        if "|" in line:
+            self._pending_table_header = line
+            return []
         if not line.strip():
             return self._end_text_run()
         return self._stream_text(unfed + "\n")
