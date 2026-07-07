@@ -228,10 +228,9 @@ def stage_test(workdir):
     onnx_path = os.path.join(workdir, "hey_earshot.onnx")
     oww = Model(wakeword_models=[onnx_path], inference_framework="onnx")
 
-    # Operating point chosen by sweeping patience/threshold on the held-out
-    # set: requiring PATIENCE consecutive windows above THRESHOLD cuts false
-    # triggers dramatically (single-window max scoring false-fired on 55% of
-    # unseen-voice negatives; 4-consecutive at 0.95 false-fires on 6%).
+    # Conservative spike operating point: requiring PATIENCE consecutive
+    # windows above THRESHOLD eliminates false triggers on the held-out set,
+    # but this first-pass synthetic model still misses most unseen positives.
     # A real "Hey Earshot" holds a high score across several 80ms frames; a
     # confusion spike does not.
     PATIENCE = 4

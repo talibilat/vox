@@ -80,24 +80,24 @@ Training data was fully synthetic, following the official pipeline's strategy at
 Held-out test: 88 clips, none of whose voices appear in training (4 unseen `say` voices at unseen rates for 8 positives and 80 negatives over all 20 phrases).
 
 Scoring uses a patience rule: the wake fires only when 4 consecutive 80ms windows all score above 0.95.
-This mattered enormously: naive single-window max scoring false-fired on 55% of unseen-voice negatives; the patience rule cut that to 6% while keeping detection.
+This conservative operating point eliminated false triggers on the held-out set, but missed most unseen-voice positives.
 A real "Hey Earshot" holds a high score across several consecutive frames; a phonetic confusion usually spikes on one or two.
 
 Results on the 88-clip held-out set (threshold 0.95, patience 4):
 
 | Metric | Result |
 |---|---|
-| Positives detected | 7/8 (false-negative rate 12.5%) |
-| False triggers | 5/80 (false-positive rate 6%) |
+| Positives detected | 3/8 (false-negative rate 62%) |
+| False triggers | 0/80 (false-positive rate 0%) |
 
-Failure analysis, all failures are coherent:
+Failure analysis:
 
-- The 1 miss was a boundary case: the fastest speaking rate of one unseen voice (0.920, just under threshold).
-- All 5 false triggers came from the deliberately adversarial hard negatives: "Hey there" (x2), "Hey Ella" (x2), and "within earshot" (x1). Not one of the 40 generic-speech negatives ("refactor the authentication module", "the quick brown fox...") ever triggered.
+- The 5 misses are all unseen-voice positives whose patience-window scores stay below the 0.95 threshold.
+- None of the 80 negatives triggered, including the deliberately adversarial hard negatives ("Hey Marshall", "within earshot", "Hair shirt", "Hey Ella", "Hey Earl").
 
-Verdict: **"Hey Earshot" is finalized as the wake word and the model is feasibility-grade proven.**
-The pipeline (multi-voice synthetic generation, streaming-consistent feature extraction, ONNX head loadable by `openwakeword.Model`, patience-scored detection) works end to end, rejects normal conversation reliably, and confuses only near-homophones of the wake phrase on voices it has never heard.
-That failure mode is exactly what more positive-sample scale and real-noise negatives fix (the official openWakeWord recipe at full scale, plus #15's live tuning); nothing here suggests the phrase or the architecture is wrong.
+Verdict: **"Hey Earshot" remains a plausible wake word, but this model is only a feasibility spike artifact.**
+The pipeline (multi-voice synthetic generation, streaming-consistent feature extraction, ONNX head loadable by `openwakeword.Model`, patience-scored detection) works end to end and rejects normal conversation reliably, but the committed model does not yet have acceptable unseen-voice recall.
+That recall gap is exactly what more positive-sample scale and real-noise tuning should address (the official openWakeWord recipe at full scale, plus #15's live tuning); nothing here proves the phrase or the architecture is production-ready.
 The trained artifact is committed at `spikes/models/hey_earshot.onnx` (11 KB) with the exact operating point baked into `spikes/train_wakeword.py`.
 
 Hard-won implementation lessons (these cost most of the spike time and matter for #5):
