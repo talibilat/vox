@@ -302,3 +302,85 @@ def test_daemon_stops_when_input_pipeline_thread_fails(monkeypatch, daemon_confi
     assert stopped.is_set()
     assert agent_stopped.is_set(), "the owned agent process was not shut down"
     assert not Path(daemon_config.daemon.pid_file).exists()
+
+
+def test_daemon_stops_watcher_pool_before_fleet(monkeypatch, daemon_config):
+    import earshot.agents
+    import earshot.barge
+    import earshot.conductor
+    import earshot.output
+
+    order = []
+    pipeline_failed = threading.Event()
+
+    class FakeAdapter:
+        alive = True
+
+        def start(self):
+            pass
+
+        def stop(self):
+            order.append("fleet")
+
+        def send(self, _prompt):
+            return iter(())
+
+    monkeypatch.setattr(earshot.agents, "create_adapter", lambda _name, _cfg: FakeAdapter())
+
+    class FakeOutputPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(earshot.output, "OutputPipeline", FakeOutputPipeline)
+
+    class FakeWatcherPool:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def set_active_probe(self, _probe):
+            pass
+
+        def dispatch(self, _name, _command):
+            pass
+
+        def latest_response_text(self, _name):
+            return ""
+
+        def status_line(self):
+            return ""
+
+        def stop(self):
+            order.append("pool")
+
+    monkeypatch.setattr(earshot.conductor, "WatcherPool", FakeWatcherPool)
+
+    class FailingPipeline:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def run(self):
+            pipeline_failed.set()
+            raise RuntimeError("microphone failed")
+
+        def stop(self):
+            pass
+
+    sleep_calls = 0
+
+    def sleep(_seconds):
+        nonlocal sleep_calls
+        if pipeline_failed.wait(timeout=0.01):
+            return
+        sleep_calls += 1
+        if sleep_calls > 5:
+            raise AssertionError("daemon kept running after input pipeline failure")
+
+    daemon_config.wake_word.model_path = "model.onnx"
+    monkeypatch.setattr(earshot.barge, "InterruptibleVoiceLoop", FailingPipeline)
+    monkeypatch.setattr(daemon.signal, "signal", lambda *_args: None)
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+
+    with pytest.raises(RuntimeError, match="input pipeline failed"):
+        daemon.run(daemon_config)
+
+    assert order[:2] == ["pool", "fleet"]

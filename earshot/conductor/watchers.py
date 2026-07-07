@@ -86,20 +86,27 @@ class AgentWatcher:
                 self._record.mark("finished")
             except AgentError as error:
                 logger.warning("agent %s turn failed: %s", self._record.name, error)
-                self._buffer(f"The last request failed: {error}")
-                self._record.mark("dead" if not self._record.adapter.alive else "finished")
-                if self._is_active(self._record.name):
-                    self._say(f"{self._record.name} is not responding.")
-            except Exception:
+                self._record_failure(error)
+            except Exception as error:
                 logger.exception("watcher for %s crashed on a turn", self._record.name)
-                self._record.mark("dead" if not self._record.adapter.alive else "idle")
+                self._record_failure(error)
 
     def _run_turn(self, command: str) -> None:
         collected: list[str] = []
+        collected_chars = 0
+        truncated = False
 
         def tee():
+            nonlocal collected_chars, truncated
             for chunk in self._record.adapter.send(command):
-                collected.append(chunk)
+                if collected_chars < MAX_RESPONSE_CHARS:
+                    remaining = MAX_RESPONSE_CHARS - collected_chars
+                    collected.append(chunk[:remaining])
+                    collected_chars += min(len(chunk), remaining)
+                    if len(chunk) > remaining:
+                        truncated = True
+                else:
+                    truncated = True
                 yield chunk
 
         if self._is_active(self._record.name):
@@ -108,7 +115,16 @@ class AgentWatcher:
         else:
             for _ in tee():
                 pass  # buffer silently; nothing is spoken unprompted
-        self._buffer("".join(collected))
+        response = "".join(collected)
+        if truncated:
+            response += " (response truncated)"
+        self._buffer(response)
+
+    def _record_failure(self, error: Exception) -> None:
+        self._buffer(f"The last request failed: {error}")
+        self._record.mark("dead" if not self._record.adapter.alive else "finished")
+        if self._is_active(self._record.name):
+            self._say(f"{self._record.name} is not responding.")
 
     def _buffer(self, response: str) -> None:
         if len(response) > MAX_RESPONSE_CHARS:

@@ -8,6 +8,7 @@ import time
 import pytest
 
 import earshot.agents
+import earshot.conductor.watchers as watcher_module
 from earshot.agents import AgentError
 from earshot.conductor import Fleet, Router, WatcherPool
 from earshot.conductor.status import spoken_status
@@ -23,9 +24,12 @@ class ScriptedAdapter:
         self.release = threading.Event()
         self.release.set()  # respond immediately unless a test holds it
         self.fail_next = False
+        self.raise_next = None
+        self.starts = 0
         self._alive = True
 
     def start(self):
+        self.starts += 1
         self._alive = True
 
     def stop(self):
@@ -40,6 +44,10 @@ class ScriptedAdapter:
         if self.fail_next:
             self.fail_next = False
             raise AgentError(f"{self.name} exploded")
+        if self.raise_next is not None:
+            error = self.raise_next
+            self.raise_next = None
+            raise error
         self.release.wait(timeout=10)
         yield f"{self.name} answer to "
         yield f"{prompt!r}. "
@@ -167,6 +175,28 @@ class TestStatus:
 
 
 class TestBufferLimits:
+    def test_response_is_capped_before_buffering(self, rig, monkeypatch):
+        _router, pool, adapters, _output, fleet = rig
+        monkeypatch.setattr(watcher_module, "MAX_RESPONSE_CHARS", 10)
+        original_buffer = watcher_module.AgentWatcher._buffer
+        received_lengths = []
+
+        def record_buffer_size(self, response):
+            received_lengths.append(len(response))
+            original_buffer(self, response)
+
+        monkeypatch.setattr(watcher_module.AgentWatcher, "_buffer", record_buffer_size)
+
+        def send(prompt):
+            adapters["marvin"].prompts.append(prompt)
+            yield "x" * 25
+            yield "y" * 25
+
+        adapters["marvin"].send = send
+        pool.dispatch("marvin", "flood me")
+        assert wait_for(lambda: fleet.get("marvin").status == "finished")
+        assert max(received_lengths) <= 10 + len(" (response truncated)")
+
     def test_oversized_response_is_truncated(self, rig):
         _router, pool, adapters, _output, fleet = rig
         big = "x" * 500_000
@@ -197,6 +227,14 @@ class TestBufferLimits:
 
 
 class TestFailureIsolation:
+    def test_unexpected_turn_failure_is_buffered_as_finished_response(self, rig):
+        _router, pool, adapters, _output, fleet = rig
+        adapters["olivia"].raise_next = RuntimeError("tool crashed")
+        pool.dispatch("olivia", "explode")
+        assert wait_for(lambda: fleet.get("olivia").status == "finished")
+        assert "failed" in pool.latest_response_text("olivia")
+        assert "tool crashed" in pool.latest_response_text("olivia")
+
     def test_failed_turn_marks_agent_without_touching_others(self, rig):
         _router, pool, adapters, output, fleet = rig
         adapters["olivia"].fail_next = True
@@ -215,6 +253,40 @@ class TestFailureIsolation:
         pool.dispatch("olivia", "explode")
         pool.dispatch("olivia", "recover")
         assert wait_for(lambda: "olivia answer to 'recover'" in pool.latest_response_text("olivia"))
+
+
+class TestWatcherSupervision:
+    def test_watcher_mode_does_not_exempt_initial_active_agent(self, monkeypatch):
+        monkeypatch.setattr("earshot.conductor.lifecycle.SUPERVISION_INTERVAL", 0.05)
+        adapters = {}
+
+        def fake_create(name, _config):
+            adapters[name] = ScriptedAdapter(name)
+            return adapters[name]
+
+        monkeypatch.setattr(earshot.agents, "create_adapter", fake_create)
+        config = Config()
+        config.agents = {name: AgentConfig() for name in ["marvin", "olivia"]}
+        fleet = Fleet(config, stagger_seconds=0)
+        fleet.start_all()
+        output = RecordingOutput()
+        pool = WatcherPool(fleet, output)
+        try:
+            fleet.start_supervision()
+            router = Router(
+                fleet,
+                output,
+                read_response=pool.latest_response_text,
+                fleet_status=pool.status_line,
+                dispatch=pool.dispatch,
+            )
+            pool.set_active_probe(lambda name: router.active_agent == name)
+            adapters["marvin"].stop()
+            assert wait_for(lambda: adapters["marvin"].alive)
+            assert adapters["marvin"].starts >= 2
+        finally:
+            pool.stop()
+            fleet.stop_all()
 
 
 def test_sixteen_agents_concurrent_no_soup(monkeypatch):

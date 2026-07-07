@@ -274,10 +274,10 @@ def run(config: Config) -> None:
         if pipeline is not None:
             pipeline.stop()
             pipeline_thread.join(timeout=5)
-        if fleet is not None:
-            fleet.stop_all()
         if pool is not None:
             pool.stop()
+        if fleet is not None:
+            fleet.stop_all()
         # Only remove the PID file this process owns; never clobber a file
         # that another daemon has since written.
         try:

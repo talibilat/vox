@@ -65,7 +65,7 @@ class Router:
         names = fleet.registry.names()
         self._active = names[0] if names else None
         self._pending: tuple[str, str] | None = None  # (candidate name, held command)
-        if self._active:
+        if self._active and self._exempt_active:
             fleet.set_active(self._active)
 
     @property
