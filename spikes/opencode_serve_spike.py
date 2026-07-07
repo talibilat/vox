@@ -21,8 +21,8 @@ import subprocess
 import sys
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 MODEL = {"providerID": "opencode", "id": "deepseek-v4-flash-free"}
 TURN_TIMEOUT = 120.0
@@ -68,11 +68,11 @@ class Server:
             try:
                 api(self.base, "GET", "/api/health", timeout=2)
                 return
-            except (urllib.error.URLError, OSError):
+            except (urllib.error.URLError, OSError) as e:
                 if self.proc.poll() is not None:
-                    raise RuntimeError("opencode serve exited during startup")
+                    raise RuntimeError("opencode serve exited during startup") from e
                 time.sleep(0.25)
-        raise RuntimeError("opencode serve not ready within %ss" % READY_TIMEOUT)
+        raise RuntimeError(f"opencode serve not ready within {READY_TIMEOUT}s")
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
@@ -163,7 +163,9 @@ def run_turn(base, events, session_id, text):
     for m in msgs:
         if m.get("type") == "assistant" and m.get("finish") == "stop":
             created = (m.get("time") or {}).get("created", 0)
-            text = "".join(c.get("text", "") for c in m.get("content", []) if c.get("type") == "text")
+            text = "".join(
+                c.get("text", "") for c in m.get("content", []) if c.get("type") == "text"
+            )
             if created > newest:
                 newest = created
                 final = text
@@ -185,7 +187,12 @@ def two_turn_run(tag=""):
         t1 = time.time()
         # Persistence proof: the second turn must recall first-turn content
         # that this prompt deliberately does not repeat.
-        r2 = run_turn(srv.base, events, sid, "Reply with exactly the marker you replied with in your previous message.")
+        r2 = run_turn(
+            srv.base,
+            events,
+            sid,
+            "Reply with exactly the marker you replied with in your previous message.",
+        )
         t2 = time.time()
         print(f"{tag}turn1 ({t1 - t0:.1f}s): {r1!r}")
         print(f"{tag}turn2 ({t2 - t1:.1f}s): {r2!r}")
@@ -207,7 +214,12 @@ def kill_restart_run():
     print(f"pre-kill turn: {r1!r}")
 
     # Fire a prompt and SIGKILL the server while it is (probably) mid-turn.
-    api(srv.base, "POST", f"/api/session/{sid}/prompt", {"prompt": {"text": "Count slowly from 1 to 30, one number per line."}})
+    api(
+        srv.base,
+        "POST",
+        f"/api/session/{sid}/prompt",
+        {"prompt": {"text": "Count slowly from 1 to 30, one number per line."}},
+    )
     time.sleep(1.0)
     srv.kill_hard()
     events.stop()
@@ -226,7 +238,11 @@ def kill_restart_run():
             return
         msgs = api(srv2.base, "GET", f"/api/session/{sid}/message")["data"]
         print(f"messages visible after restart: {len(msgs)}")
-        interrupted = [m for m in msgs if m.get("type") == "assistant" and m.get("finish") not in ("stop", None)]
+        interrupted = [
+            m
+            for m in msgs
+            if m.get("type") == "assistant" and m.get("finish") not in ("stop", None)
+        ]
         print(f"interrupted assistant messages: {[m.get('finish') for m in interrupted]}")
         r = run_turn(srv2.base, events2, sid, "Reply with exactly: AFTER_RESTART_OK")
         print(f"post-restart turn: {r!r}")

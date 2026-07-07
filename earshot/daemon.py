@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -42,7 +43,35 @@ def _looks_like_earshot(pid: int) -> bool:
         return True  # cannot verify; err on the side of "running"
     if result.returncode != 0:
         return False
-    return "earshot" in result.stdout
+    try:
+        argv = shlex.split(result.stdout.strip())
+    except ValueError:
+        return False
+    return _is_earshot_daemon_argv(argv)
+
+
+def _is_earshot_daemon_argv(argv: list[str]) -> bool:
+    try:
+        module_index = argv.index("-m")
+    except ValueError:
+        return False
+    if module_index + 1 >= len(argv) or argv[module_index + 1] != "earshot.cli":
+        return False
+    command_args = argv[module_index + 2 :]
+    if "--config" in command_args:
+        config_index = command_args.index("--config")
+        if config_index + 1 >= len(command_args):
+            return False
+        command_args = command_args[:config_index] + command_args[config_index + 2 :]
+    return command_args == ["run"] or command_args == ["start", "--foreground"]
+
+
+def _unlink_pid_if_matches(pid_file: Path, pid: int) -> None:
+    try:
+        if pid_file.read_text().strip() == str(pid):
+            pid_file.unlink(missing_ok=True)
+    except FileNotFoundError:
+        pass
 
 
 def read_pid(config: Config) -> int | None:
@@ -56,12 +85,12 @@ def read_pid(config: Config) -> int | None:
     try:
         os.kill(pid, 0)  # existence check only
     except ProcessLookupError:
-        pid_file.unlink(missing_ok=True)
+        _unlink_pid_if_matches(pid_file, pid)
         return None
     except PermissionError:
         pass  # process exists; fall through to the identity check
     if not _looks_like_earshot(pid):
-        pid_file.unlink(missing_ok=True)
+        _unlink_pid_if_matches(pid_file, pid)
         return None
     return pid
 

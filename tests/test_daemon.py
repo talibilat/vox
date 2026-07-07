@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from earshot import daemon
+from earshot.config import Config
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -23,6 +26,14 @@ daemon:
 """
     )
     return config_path
+
+
+@pytest.fixture()
+def daemon_config(tmp_path):
+    config = Config()
+    config.daemon.log_file = str(tmp_path / "earshot.log")
+    config.daemon.pid_file = str(tmp_path / "earshot.pid")
+    return config
 
 
 def cli(*args, config=None):
@@ -134,6 +145,32 @@ def test_live_but_unowned_pid_treated_as_stale(isolated_config, tmp_path):
     finally:
         sleeper.kill()
         sleeper.wait()
+
+
+def test_pid_identity_does_not_accept_earshot_substring(monkeypatch):
+    class Result:
+        returncode = 0
+        stdout = "tail -f /tmp/earshot.log\n"
+
+    monkeypatch.setattr(daemon.subprocess, "run", lambda *args, **kwargs: Result())
+
+    assert not daemon._looks_like_earshot(12345)
+
+
+def test_stale_pid_cleanup_preserves_replaced_pid_file(monkeypatch, daemon_config, tmp_path):
+    pid_file = tmp_path / "earshot.pid"
+    pid_file.write_text("12345")
+
+    def kill_replaces_pid_file(pid, sig):
+        assert pid == 12345
+        assert sig == 0
+        pid_file.write_text("67890")
+        raise ProcessLookupError
+
+    monkeypatch.setattr(daemon.os, "kill", kill_replaces_pid_file)
+
+    assert daemon.read_pid(daemon_config) is None
+    assert pid_file.read_text() == "67890"
 
 
 def test_config_error_exit_code(tmp_path):

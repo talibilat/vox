@@ -94,6 +94,18 @@ def test_invalid_values_name_the_key(tmp_path, text, path_in_error):
         load(write(tmp_path, text))
 
 
+@pytest.mark.parametrize(
+    ("text", "path_in_error"),
+    [
+        ("wake_word: {patience: true}", "wake_word.patience"),
+        ("tts: {local: {speed: true}}", "tts.local.speed"),
+    ],
+)
+def test_boolean_values_are_not_accepted_as_numbers(tmp_path, text, path_in_error):
+    with pytest.raises(ConfigError, match=path_in_error.replace(".", r"\.")):
+        load(write(tmp_path, text))
+
+
 def test_unknown_top_level_key(tmp_path):
     with pytest.raises(ConfigError, match="wake_words: unknown key"):
         load(write(tmp_path, "wake_words: {phrase: hi}"))
