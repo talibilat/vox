@@ -33,7 +33,8 @@ tts:
 
 code_blocks: summarize      # fenced code blocks: summarize | skip | read
 
-# Spoken agent name -> how to reach that agent.
+# Spoken agent name -> how to reach that agent. The key is the name used in
+# voice addressing, for example "main, run the tests".
 agents:
   main:
     harness: opencode       # opencode | claude-code | codex

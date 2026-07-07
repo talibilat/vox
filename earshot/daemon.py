@@ -227,15 +227,15 @@ def run(config: Config) -> None:
         if active.status == "dead":
             raise RuntimeError(f"the active agent {active_name!r} failed to start")
         # The conversation loop owns turn-triggered recovery for the active
-        # agent; the supervisor owns everyone else.
+        # agent; the supervisor owns everyone else, and the router moves the
+        # exemption as spoken addressing switches agents.
         fleet.start_supervision(active_name=active_name)
 
-        pipeline = InterruptibleVoiceLoop(
-            config,
-            active.adapter,
-            OutputPipeline(config),
-            restart=lambda: fleet.restart(active_name),
-        )
+        from earshot.conductor import Router
+
+        output = OutputPipeline(config)
+        router = Router(fleet, output)
+        pipeline = InterruptibleVoiceLoop(config, router, output)
 
         def _run_pipeline() -> None:
             nonlocal pipeline_error

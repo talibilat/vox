@@ -82,6 +82,12 @@ class Fleet:
 
     # --- supervision -------------------------------------------------------
 
+    def set_active(self, name: str | None) -> None:
+        """The active conversation agent is exempt from supervisor restarts
+        (its recovery belongs to the conversation loop). The router calls
+        this as addressing switches."""
+        self._active_name = name
+
     def start_supervision(self, active_name: str | None = None) -> None:
         """Watch process liveness; restart dead agents per their config,
         except the active conversation agent (owned by the loop's recovery)."""
