@@ -83,6 +83,7 @@ A track cannot start until its gate is fully merged.
 | 7 | #15, then #16 | All of Phase 1 + 2 merged | Sequential: release documents the numbers that tuning produces. |
 
 The critical path is: Track 1 -> #5/#6 -> #8 -> #9 -> #11 -> Phase 2 fan-out -> #15 -> #16.
+P0-02 proved that opencode status should derive from `session.next.step.ended` with `finish: "stop"`; #13 must not rely on `session.idle`, which exists in the schema but was not emitted in the spike.
 
 ## How to read this
 
