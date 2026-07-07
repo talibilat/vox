@@ -4,7 +4,7 @@ Voice-to-voice control for terminal coding agents.
 You speak to your agents; they speak back.
 No keyboard, no reading walls of markdown, and it scales from one agent to a named fleet of sixteen you conduct by voice.
 
-> Demo recording: pending (see `docs/demo-script.md` for the exact flow to record).
+> Release status: source-ready; the public demo recording and PyPI publication are release-gate tasks tracked in `docs/tickets/P3-02.md`.
 
 ## What it does
 
@@ -17,9 +17,16 @@ No keyboard, no reading walls of markdown, and it scales from one agent to a nam
 
 ## Install
 
+From source today:
+
 ```sh
-pip install earshot-cli
+git clone https://github.com/talibilat/earshot && cd earshot
+python -m venv .venv
+. .venv/bin/activate
+pip install -e .
 ```
+
+After PyPI publication, install from PyPI with the package name `earshot-cli`.
 
 Runtime requirements: Python 3.10+, a microphone and speaker (PortAudio), and at least one agent CLI on your PATH (`opencode`, `claude`, or `codex`).
 On macOS, `brew install portaudio` if sounddevice cannot find it.
@@ -99,7 +106,7 @@ The shipped thresholds come from a measured sweep (see `docs/tuning-protocol.md`
 - [Latency and wake-word spike numbers](docs/latency-spike.md)
 - [opencode serve transport notes](docs/control-plane-spike.md)
 - [Dependency license audit](docs/licenses.md)
-- [Demo script](docs/demo-script.md)
+- [Demo recording script](docs/demo-script.md)
 - Per-ticket engineering notes live under `docs/tickets/`.
 
 ## Relationship to Claude Code's voice mode
@@ -118,14 +125,14 @@ Earshot is a personal tool first: no SLAs, no multi-user, no production hardenin
 ## Development
 
 ```sh
-git clone https://github.com/talibilat/vox && cd vox
+git clone https://github.com/talibilat/earshot && cd earshot
 uv venv && uv pip install -e ".[dev]"
 pytest -q        # 255 tests; heavier voice tests skip without the audio deps
 ruff check earshot tests
 ```
 
 Development notes: `earshot start --foreground` runs in the terminal; the voice loop needs `wake_word.model_path` set (the committed model at `spikes/models/hey_earshot.onnx` is development-grade).
-The name situation: the product is Earshot, the pip package is `earshot-cli` (`earshot` was taken on PyPI), and this repository predates the name (renaming it to `earshot` is tracked in docs/tickets/P3-02.md).
+The name situation: the product is Earshot, the pip package is `earshot-cli` (`earshot` was taken on PyPI), and the public repository URL is `github.com/talibilat/earshot`.
 
 ## License
 

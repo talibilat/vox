@@ -37,9 +37,9 @@ dependencies = [
 [project.scripts]
 earshot = "earshot.cli:main"
 [project.urls]
-Homepage = "https://github.com/talibilat/vox"
-Documentation = "https://github.com/talibilat/vox/tree/main/docs"
-Issues = "https://github.com/talibilat/vox/issues"
+Homepage = "https://github.com/talibilat/earshot"
+Documentation = "https://github.com/talibilat/earshot/tree/main/docs"
+Issues = "https://github.com/talibilat/earshot/issues"
 
 
 [project.optional-dependencies]

@@ -35,7 +35,10 @@ Duplicate mapping keys (for example two agents with the same name) are rejected 
 | `local.engine` | `piper` | Only `piper` is implemented; it won the latency spike by 6-20x. |
 | `local.voice` | `en_US-lessac-medium` | Piper voice, auto-downloaded to `~/.local/share/earshot/voices` on first use. |
 | `local.speed` | `1.0` | Speaking speed multiplier. |
-| `api.base_url` / `api.api_key_env` / `api.model` / `api.voice` | OpenAI defaults | Hosted synthesis settings; audio streams as 24kHz PCM. |
+| `api.base_url` | `https://api.openai.com/v1` | Any OpenAI-compatible `/audio/speech` server. |
+| `api.api_key_env` | `OPENAI_API_KEY` | NAME of the environment variable holding the key; never a literal key. |
+| `api.model` | `tts-1` | Hosted synthesis model name. |
+| `api.voice` | `alloy` | Hosted synthesis voice name. Audio streams as 24kHz PCM. |
 | `api.fallback_to_local` | `false` | On API failure, synthesize locally (resampled to match the open stream). |
 
 ## code_blocks
