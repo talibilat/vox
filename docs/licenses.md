@@ -30,6 +30,8 @@ Projects without a repository license file, or with non-standard restrictions, m
 | Coqui TTS | `coqui-ai/TTS` at `dbf1a08` | `LICENSE.txt`: Mozilla Public License 2.0 | OK to learn high-level patterns. | Use only as an external dependency with MPL-2.0 obligations preserved. | Do not copy MPL-covered source into Earshot unless Earshot is prepared to publish those covered-file modifications under MPL-2.0. |
 | Silero VAD | `snakers4/silero-vad` at `b163605` | `LICENSE`: MIT License | OK to borrow patterns. | OK as a runtime dependency from a license standpoint. | Repository also contains dataset documentation with CC BY-NC-SA 4.0 for datasets, so avoid redistributing training datasets or derived noncommercial artifacts without a separate check. |
 | faster-whisper | `SYSTRAN/faster-whisper` at `ed9a06c` | `LICENSE`: MIT License | OK to borrow patterns. | OK as a runtime dependency from a license standpoint. | License is permissive and conventional. |
+| NumPy | `numpy/numpy` at `634b462` | `LICENSE.txt`: BSD 3-Clause License | OK to borrow patterns. | OK as a runtime dependency with BSD notice handling. | Added by the audio input pipeline for frame buffers and sample conversion. |
+| sounddevice | `spatialaudio/python-sounddevice` at `88de286` | `LICENSE`: MIT License | OK to borrow patterns. | OK as a runtime dependency from a license standpoint. | Added by the audio input pipeline for PortAudio microphone capture. |
 
 ## Loud Flags
 
