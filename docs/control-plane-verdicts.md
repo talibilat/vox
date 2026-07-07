@@ -12,7 +12,7 @@ Method: each surface was prototyped in isolation to capture real event shapes, i
 | Claude Code | `claude --print` stream-json + `--resume` | **Solid, with per-turn process cost.** | No |
 | codex | `codex app-server` JSON-RPC over stdio | **Solid.** | No |
 
-**No harness needs the tmux fallback (#14) at current versions.** All three native surfaces passed the same behavioral contract and real two-turn conversations. #14 stays dormant unless a future version regresses.
+**No harness needs the tmux fallback (#14) at current versions.** All three native surfaces passed the same behavioral contract and real two-turn conversations. P2-04 still implemented a generic opt-in fallback as insurance for a future harness or regression, but it stays dormant in normal configs.
 
 ## opencode (`opencode serve`)
 
