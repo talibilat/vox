@@ -135,9 +135,7 @@ class TmuxAgentAdapter(AgentAdapter):
     def _check_delivery(self, result: subprocess.CompletedProcess) -> None:
         if result.returncode != 0:
             detail = (
-                result.stderr.strip()
-                or result.stdout.strip()
-                or f"exit code {result.returncode}"
+                result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
             )
             raise AgentError(f"could not deliver prompt to agent {self._name}: {detail}")
 
