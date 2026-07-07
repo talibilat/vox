@@ -71,32 +71,32 @@ Verdict: the 200ms barge-in target is comfortably achievable on paper, with two 
 ## Wake word: "Hey Earshot" first-pass model (openWakeWord)
 
 Approach: kept openWakeWord's pretrained feature backbone (melspectrogram + Google speech embedding, the frontend every official model uses) and trained a small MLP head (16x96 window, ~50k params, exported to ONNX and loaded by `openwakeword.Model`).
-Training data was fully synthetic, following the official pipeline's strategy at reduced scale:
+Training data was fully synthetic, following the official pipeline's strategy at reduced scale, but limited to the macOS `say` generator that is committed in `spikes/train_wakeword.py`:
 
-- Positives: 400 multi-speaker "Hey Earshot" clips from piper-sample-generator's LibriTTS-R generator (up to 500 speakers, 3 speaking speeds) plus 80 clips from 20 macOS `say` voices at 4 rates.
-- Negatives: 500 LibriTTS-R plus 400 `say` clips over 20 phrases, including hard negatives ("Hey Marshall", "within earshot", "Hair shirt", "Hey Ella", "Hey Earl"), plus silence and noise.
+- Positives: 80 "Hey Earshot" clips from 20 macOS `say` voices at 4 rates.
+- Negatives: 400 `say` clips over 20 phrases, including hard negatives ("Hey Marshall", "within earshot", "Hair shirt", "Hey Ella", "Hey Earl"), plus silence and noise.
 - Augmentation on everything: noise, low volume, and +-8% pitch/tempo resampling.
 
-Held-out test: 92 clips, none of whose voices or TTS engines appear in training (4 unseen `say` voices at unseen rates for 8 positives and 80 negatives over all 20 phrases, plus 4 Piper en_US-lessac positives as a cross-engine check).
+Held-out test: 88 clips, none of whose voices appear in training (4 unseen `say` voices at unseen rates for 8 positives and 80 negatives over all 20 phrases).
 
 Scoring uses a patience rule: the wake fires only when 4 consecutive 80ms windows all score above 0.95.
 This mattered enormously: naive single-window max scoring false-fired on 55% of unseen-voice negatives; the patience rule cut that to 6% while keeping detection.
 A real "Hey Earshot" holds a high score across several consecutive frames; a phonetic confusion usually spikes on one or two.
 
-Results on the 92-clip held-out set (threshold 0.95, patience 4):
+Results on the 88-clip held-out set (threshold 0.95, patience 4):
 
 | Metric | Result |
 |---|---|
-| Positives detected | 10/12 (false-negative rate 17%) |
+| Positives detected | 7/8 (false-negative rate 12.5%) |
 | False triggers | 5/80 (false-positive rate 6%) |
 
 Failure analysis, all failures are coherent:
 
-- The 2 misses were boundary cases: the fastest speaking rate of one unseen voice (0.920, just under threshold) and the slowest Piper lessac variant (0.950, exactly at threshold).
+- The 1 miss was a boundary case: the fastest speaking rate of one unseen voice (0.920, just under threshold).
 - All 5 false triggers came from the deliberately adversarial hard negatives: "Hey there" (x2), "Hey Ella" (x2), and "within earshot" (x1). Not one of the 40 generic-speech negatives ("refactor the authentication module", "the quick brown fox...") ever triggered.
 
 Verdict: **"Hey Earshot" is finalized as the wake word and the model is feasibility-grade proven.**
-The pipeline (multi-speaker synthetic generation, streaming-consistent feature extraction, ONNX head loadable by `openwakeword.Model`, patience-scored detection) works end to end, rejects normal conversation reliably, and confuses only near-homophones of the wake phrase on voices it has never heard.
+The pipeline (multi-voice synthetic generation, streaming-consistent feature extraction, ONNX head loadable by `openwakeword.Model`, patience-scored detection) works end to end, rejects normal conversation reliably, and confuses only near-homophones of the wake phrase on voices it has never heard.
 That failure mode is exactly what more positive-sample scale and real-noise negatives fix (the official openWakeWord recipe at full scale, plus #15's live tuning); nothing here suggests the phrase or the architecture is wrong.
 The trained artifact is committed at `spikes/models/hey_earshot.onnx` (11 KB) with the exact operating point baked into `spikes/train_wakeword.py`.
 
