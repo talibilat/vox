@@ -74,7 +74,7 @@ A track cannot start until its gate is fully merged.
 
 | Track | Issues (parallel within the track) | Gated by | Why they don't collide |
 |---|---|---|---|
-| 1 | #1, #2, #3, #4 | Nothing. Start all four now. | Three spikes write only docs and throwaway scripts; the scaffold creates the package skeleton. Zero shared files. |
+| 1 | #1, #2, #3, #4 | Nothing. Start all four now. | Three spikes write only docs and isolated spike artifacts; the scaffold creates the package skeleton. Zero shared files. |
 | 2 | #5, #6 | Track 1 complete (scaffold + both relevant spikes + license gate) | Input pipeline (`earshot/stt/`, `earshot/wakeword/`, `audio/capture.py`) vs output pipeline (`earshot/tts/`, `earshot/speakable/`, `audio/playback.py`) are disjoint modules. |
 | 3 | #8, #10 | #5 and #6 merged (#8 also needs #2) | Agent adapter + loop (`earshot/agents/`, `loop.py`, `daemon.py`) vs API voice backends (`stt/api_openai.py`, `tts/api_openai.py`). No overlap. |
 | 4 | #7, #9 | #8 merged | Barge-in touches audio and loop internals; the two new adapters touch only `earshot/agents/`. No overlap. |
@@ -84,6 +84,10 @@ A track cannot start until its gate is fully merged.
 
 The critical path is: Track 1 -> #5/#6 -> #8 -> #9 -> #11 -> Phase 2 fan-out -> #15 -> #16.
 P0-02 proved that opencode status should derive from `session.next.step.ended` with `finish: "stop"`; #13 must not rely on `session.idle`, which exists in the schema but was not emitted in the spike.
+P0-03 chose faster-whisper `base.en` as the default STT model with `tiny.en` as the low-latency option for #5.
+It chose Piper `en_US-lessac-medium` as the default TTS engine for #6; Kokoro should remain optional and sentence-at-a-time only.
+It showed Silero VAD has enough headroom for the 200ms barge-in target in #7, but #15 still owns real-microphone noise tuning.
+Its committed `spikes/models/hey_earshot.onnx` model is only a feasibility artifact, so #5 should treat the openWakeWord pipeline and phrase as proven enough to continue, not production-ready.
 
 ## How to read this
 
