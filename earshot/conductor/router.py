@@ -4,10 +4,11 @@ The Router is the multi-agent transcript handler (the single-agent case is
 just a one-name fleet, so the daemon always uses it). Classification order:
 
 1. fleet command  reserved phrases like "agent status" are NEVER sent to an
-                  agent as prompt text; #13 owns what status actually says.
+                  agent as prompt text; the watcher pool supplies the spoken
+                  fleet roll-call when it is wired in.
 2. read request   "<name>, what's your response" style utterances go to the
-                  output layer seam (#13 implements it; the default politely
-                  declines).
+                  output layer seam (watcher mode reads buffered responses;
+                  the default politely declines).
 3. agent command  a confidently matched leading name routes the command and
                   makes that agent active.
 4. clarification  an ambiguous name match asks aloud and holds the command;
