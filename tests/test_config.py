@@ -15,7 +15,9 @@ def write(tmp_path, text):
 
 def test_defaults_are_valid():
     config = validate(Config())
-    assert config.agents["main"].model == "opencode/deepseek-v4-flash-free"
+    # None means "the harness's own default"; the opencode adapter pins its
+    # model itself so nothing opencode-specific leaks into other harnesses.
+    assert config.agents["main"].model is None
 
 
 def test_empty_file_loads_defaults(tmp_path):
@@ -87,7 +89,6 @@ def test_overrides_apply(tmp_path):
         ("code_blocks: mumble", "code_blocks"),
         ("agents: {}", "agents"),
         ("agents: {main: {harness: cursor}}", "agents.main.harness"),
-        ("agents: {main: {model: null}}", "agents.main.model"),
         ("agents: {main: {model: foo}}", "agents.main.model"),
         ("agents: {main: {model: provider/}}", "agents.main.model"),
         ("agents: {main: {model: /model}}", "agents.main.model"),

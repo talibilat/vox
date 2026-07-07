@@ -137,8 +137,8 @@ class TestOpencodeAdapter:
             list(adapter.send("hello"))
 
     def test_unknown_harness_is_rejected(self):
-        with pytest.raises(NotImplementedError, match="claude-code"):
-            create_adapter("main", AgentConfig(harness="claude-code"))
+        with pytest.raises(NotImplementedError, match="tmux"):
+            create_adapter("main", AgentConfig(harness="tmux"))
 
     def test_first_agent_selection(self):
         config = Config()

@@ -37,7 +37,7 @@ agents:
     harness: opencode       # opencode works today; claude-code/codex are reserved
     command: null           # optional opencode-compatible serve command; --port is appended
     workdir: "~"
-    model: opencode/deepseek-v4-flash-free  # "provider/model-id"; required for opencode
+    model: null             # null = the harness's default (opencode pins opencode/deepseek-v4-flash-free)
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:
