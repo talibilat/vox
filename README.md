@@ -28,6 +28,7 @@ Use `earshot start --foreground` for a foreground development run.
 Use `earshot --config PATH ...` to point at a non-default config file.
 The voice loop starts only when `wake_word.model_path` points at a trained openWakeWord `.onnx` model; without it, the daemon logs that the voice loop is disabled.
 The committed feasibility model is `spikes/models/hey_earshot.onnx`; it is useful for development but not production-ready.
+The shipped wake-word and barge-in defaults are tuned from the reproducible P3-01 sweep in `docs/tuning-protocol.md`.
 While the daemon is responding, speaking over playback interrupts the agent, stops synthesis and speaker output, and records the interruption as the next command without requiring the wake word again.
 Use `earshot interrupt` as the push-to-interrupt escape hatch; bind that command in your OS or launcher if you want a one-keystroke hotkey.
 
@@ -59,6 +60,8 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P2-02 voice addressing notes](docs/tickets/P2-02.md)
 - [P2-03 output watcher notes](docs/tickets/P2-03.md)
 - [P2-04 tmux fallback notes](docs/tickets/P2-04.md)
+- [P3-01 tuning protocol](docs/tuning-protocol.md)
+- [P3-01 tuning notes](docs/tickets/P3-01.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
 - [Per-harness control-plane verdicts](docs/control-plane-verdicts.md)
@@ -78,6 +81,8 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P2-02 voice addressing notes](docs/tickets/P2-02.md) record fuzzy leading-name routing, active-agent switching, clarification prompts, fleet phrase protection, and the router handoff from the voice loop.
 - [P2-03 output watcher notes](docs/tickets/P2-03.md) record per-agent watcher threads, silent background buffering, readback requests, natural fleet status, and watcher-owned failure isolation.
 - [P2-04 tmux fallback notes](docs/tickets/P2-04.md) record the generic opt-in tmux transport, session ownership, literal prompt delivery, capture-pane output cleanup, and quiescence-based completion limits.
+- [P3-01 tuning protocol](docs/tuning-protocol.md) records the reproducible VAD, wake-word, addressing, and post-tuning interrupt measurements.
+- [P3-01 tuning notes](docs/tickets/P3-01.md) record the shipped tuning defaults and remaining manual validation steps.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
 - [P0-01 VoiceMode notes](docs/voicemode-notes.md) record the VoiceMode design review and local Claude Code MCP smoke test.
@@ -100,3 +105,4 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P2-02 process notes](docs/tickets/P2-02.md)
 - [P2-03 process notes](docs/tickets/P2-03.md)
 - [P2-04 process notes](docs/tickets/P2-04.md)
+- [P3-01 process notes](docs/tickets/P3-01.md)

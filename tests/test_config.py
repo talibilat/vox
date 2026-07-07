@@ -33,7 +33,7 @@ def test_generated_default_file_loads(tmp_path):
     path = tmp_path / "generated.yaml"
     write_default(path)
     config = load(path)
-    assert config.wake_word.sensitivity == 0.95
+    assert config.wake_word.sensitivity == 0.9
     assert config.daemon.log_file.startswith("~")
 
 

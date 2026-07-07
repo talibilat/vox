@@ -17,7 +17,8 @@ Echo discrimination, MVP assumptions (documented per the issue): this
 detector does no acoustic echo cancellation. It assumes the user wears
 headphones (the plan's stated assumption) or keeps speaker volume modest,
 plus the sub-chunk patience requirement so brief playback bleed does not
-fire. Real-noise tuning and speaker-mode hardening are #15.
+fire. P3-01 tuned the shipped threshold against synthetic noise; live-room
+speaker-mode validation remains documented in docs/tuning-protocol.md.
 """
 
 from __future__ import annotations
