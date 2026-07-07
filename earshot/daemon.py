@@ -20,10 +20,15 @@ from pathlib import Path
 from earshot.config import Config
 
 logger = logging.getLogger("earshot")
+START_READY_TIMEOUT_SECONDS = 30
 
 
 def _pid_path(config: Config) -> Path:
     return Path(config.daemon.pid_file).expanduser()
+
+
+def _ready_path(config: Config) -> Path:
+    return _pid_path(config).with_suffix(_pid_path(config).suffix + ".ready")
 
 
 def _log_path(config: Config) -> Path:
@@ -101,6 +106,8 @@ def start(config: Config, config_path: str | None) -> int:
     existing = read_pid(config)
     if existing is not None:
         raise RuntimeError(f"daemon already running (pid {existing})")
+    ready_file = _ready_path(config)
+    ready_file.unlink(missing_ok=True)
     log_file = _log_path(config)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "earshot.cli"]
@@ -115,18 +122,24 @@ def start(config: Config, config_path: str | None) -> int:
             stdin=subprocess.DEVNULL,
             start_new_session=True,  # survive the parent's terminal
         )
-    # The child writes its own PID file once its loop is up; wait briefly so
-    # `earshot start && earshot status` behaves as expected.
-    deadline = time.time() + 5
+    # The child writes its ready file after startup completes so `start` only
+    # returns once the daemon can handle work.
+    deadline = time.time() + START_READY_TIMEOUT_SECONDS
     while time.time() < deadline:
-        if read_pid(config) == proc.pid:
-            return proc.pid
         if proc.poll() is not None:
             raise RuntimeError(
                 f"daemon exited immediately (exit code {proc.returncode}); see {log_file}"
             )
+        if read_pid(config) == proc.pid:
+            try:
+                if int(ready_file.read_text().strip()) == proc.pid:
+                    return proc.pid
+            except (FileNotFoundError, ValueError):
+                pass
         time.sleep(0.05)
-    raise RuntimeError(f"daemon did not report ready within 5s; see {log_file}")
+    raise RuntimeError(
+        f"daemon did not report ready within {START_READY_TIMEOUT_SECONDS}s; see {log_file}"
+    )
 
 
 def interrupt(config: Config) -> int:
@@ -172,7 +185,9 @@ def run(config: Config) -> None:
     )
 
     pid_file = _pid_path(config)
+    ready_file = _ready_path(config)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
+    ready_file.unlink(missing_ok=True)
     pid_file.write_text(str(os.getpid()))
 
     stopping = False
@@ -191,23 +206,36 @@ def run(config: Config) -> None:
     pipeline = None
     pipeline_thread = None
     pipeline_error: BaseException | None = None
-    adapter = None
+    fleet = None
     # SIGUSR1 is the push-to-interrupt escape hatch (`earshot interrupt`).
     # Registered unconditionally and BEFORE the voice loop exists: the
     # default SIGUSR1 action would otherwise terminate a daemon that is
     # running without a wake model.
     signal.signal(signal.SIGUSR1, lambda *_: pipeline and pipeline.request_interrupt())
     if config.wake_word.model_path:
-        from earshot.agents import create_adapter, first_agent
+        from earshot.agents import first_agent
         from earshot.barge import InterruptibleVoiceLoop
+        from earshot.conductor import Fleet
         from earshot.output import OutputPipeline
 
-        agent_name, agent_config = first_agent(config)
-        adapter = create_adapter(agent_name, agent_config)
-        adapter.start()
-        logger.info("agent %s (%s) is up", agent_name, agent_config.harness)
+        # Single-agent operation is the degenerate case of a one-agent
+        # fleet: one code path from Phase 1 through 16 agents.
+        fleet = Fleet(config)
+        fleet.start_all()
+        active_name, _ = first_agent(config)
+        active = fleet.get(active_name)
+        if active.status == "dead":
+            raise RuntimeError(f"the active agent {active_name!r} failed to start")
+        # The conversation loop owns turn-triggered recovery for the active
+        # agent; the supervisor owns everyone else.
+        fleet.start_supervision(active_name=active_name)
 
-        pipeline = InterruptibleVoiceLoop(config, adapter, OutputPipeline(config))
+        pipeline = InterruptibleVoiceLoop(
+            config,
+            active.adapter,
+            OutputPipeline(config),
+            restart=lambda: fleet.restart(active_name),
+        )
 
         def _run_pipeline() -> None:
             nonlocal pipeline_error
@@ -219,12 +247,17 @@ def run(config: Config) -> None:
 
         pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="voice-loop")
         pipeline_thread.start()
-        logger.info("voice loop listening (wake word: %r)", config.wake_word.phrase)
+        logger.info(
+            "voice loop listening (wake word: %r, active agent: %s)",
+            config.wake_word.phrase,
+            active_name,
+        )
     else:
         logger.info("voice loop disabled (wake_word.model_path is not set)")
 
+    ready_file.write_text(str(os.getpid()))
+
     try:
-        # Multi-agent lifecycle (#11) plugs in here.
         while not stopping:
             if pipeline_error is not None:
                 raise RuntimeError("input pipeline failed") from pipeline_error
@@ -233,13 +266,18 @@ def run(config: Config) -> None:
         if pipeline is not None:
             pipeline.stop()
             pipeline_thread.join(timeout=5)
-        if adapter is not None:
-            adapter.stop()
+        if fleet is not None:
+            fleet.stop_all()
         # Only remove the PID file this process owns; never clobber a file
         # that another daemon has since written.
         try:
             if pid_file.read_text().strip() == str(os.getpid()):
                 pid_file.unlink()
+        except (FileNotFoundError, ValueError):
+            pass
+        try:
+            if ready_file.read_text().strip() == str(os.getpid()):
+                ready_file.unlink()
         except (FileNotFoundError, ValueError):
             pass
         logger.info("earshot daemon stopped")

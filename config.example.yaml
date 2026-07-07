@@ -39,7 +39,8 @@ agents:
     harness: opencode       # opencode | claude-code | codex
     command: null           # optional command: opencode serve, claude --print, codex app-server
     workdir: "~"
-    model: opencode/deepseek-v4-flash-free          # "provider/model-id"; required for opencode
+    model: null             # null = the harness's default (opencode pins opencode/deepseek-v4-flash-free)
+    restart_on_death: true  # fleet supervisor restarts this agent if it dies
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:

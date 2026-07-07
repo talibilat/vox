@@ -5,9 +5,8 @@ Earshot is a voice-to-voice control project for terminal coding agents.
 ## Earshot Scaffold
 
 The project currently provides the installable Python package `earshot-cli`, which exposes the `earshot` console command.
-The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 opencode-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper or OpenAI-compatible API STT, markdown-to-speakable text, local Piper or OpenAI-compatible API TTS, streamed agent responses, and barge-in interruption while the agent is speaking.
-Claude Code and codex adapters land in later phase issues.
-The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the Phase 1 harness-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper STT, markdown-to-speakable text, local Piper TTS, streamed agent responses, and barge-in interruption while the agent is speaking.
+The scaffold covers configuration loading, daemon lifecycle, the first audio-input pipeline, the first speech-output pipeline, and the harness-backed voice loop: wake word detection, end-of-speech detection, local faster-whisper or OpenAI-compatible API STT, markdown-to-speakable text, local Piper or OpenAI-compatible API TTS, streamed agent responses, and barge-in interruption while the agent is speaking.
+Phase 2 adds the Conductor core: the daemon starts every configured agent as a supervised fleet, staggers startup, tracks per-agent lifecycle status, and restarts dead background agents according to each agent's `restart_on_death` policy.
 The implemented agent harnesses are `opencode`, `claude-code`, and `codex`.
 
 Install for development with:
@@ -33,10 +32,12 @@ While the daemon is responding, speaking over playback interrupts the agent, sto
 Use `earshot interrupt` as the push-to-interrupt escape hatch; bind that command in your OS or launcher if you want a one-keystroke hotkey.
 
 On first run without `--config`, Earshot creates `~/.config/earshot/config.yaml` from the same template committed as `config.example.yaml`.
-Every config key is optional, unknown keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, barge-in, and daemon paths.
-For the Phase 1 voice loop, configure the first agent under `agents` with `agents.<name>.harness` set to `opencode`, `claude-code`, or `codex`, plus an `agents.<name>.workdir`; Earshot owns the harness process and speaks streamed responses.
+Every config key is optional, unknown keys and duplicate YAML keys are rejected with key-path errors, and the schema covers wake word, STT, TTS, code-block handling, agent harnesses, restart policy, barge-in, and daemon paths.
+Configure named agents under `agents` with `agents.<name>.harness` set to `opencode`, `claude-code`, or `codex`, plus an `agents.<name>.workdir`; Earshot owns the harness processes, starts the full fleet when the voice loop is enabled, and speaks streamed responses from the first configured agent until voice addressing lands.
 Set `agents.<name>.model` only when you want to override a harness default; `model: null` uses the adapter default, and opencode validates explicit overrides in `provider/model-id` form.
-If an agent fails mid-turn, Earshot speaks the failure; if the agent process died, Earshot announces one automatic restart, starts a fresh session, and retries the request once.
+Agent names are spoken names, so validation warns when names are short or too similar for reliable speech recognition.
+If the active agent fails mid-turn, Earshot speaks the failure; if the active process died, Earshot announces one automatic restart, starts a fresh session, and retries the request once.
+For non-active fleet agents, the Conductor supervisor restarts dead processes automatically when `agents.<name>.restart_on_death` is true.
 Local STT is implemented with faster-whisper, and local TTS is implemented with Piper.
 API STT and TTS use OpenAI-compatible `/audio/transcriptions` and `/audio/speech` endpoints, read the API key from the environment variable named by `stt.api.api_key_env` or `tts.api.api_key_env`, and can fall back to the local backend when `fallback_to_local` is true; Kokoro remains a reserved local TTS engine and raises today.
 Speech output converts streamed Markdown to speakable text sentence-by-sentence; `code_blocks` controls whether fenced code blocks are summarized, skipped, or read aloud.
@@ -51,6 +52,7 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-05 agent adapter notes](docs/tickets/P1-05.md)
 - [P1-07 API backend notes](docs/tickets/P1-07.md)
 - [P1-06 harness adapter notes](docs/tickets/P1-06.md)
+- [P2-01 Conductor core notes](docs/tickets/P2-01.md)
 - [Example Earshot config](config.example.yaml)
 - [P0-02 control-plane spike](docs/control-plane-spike.md)
 - [Per-harness control-plane verdicts](docs/control-plane-verdicts.md)
@@ -63,9 +65,10 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-02 audio input notes](docs/tickets/P1-02.md) record the wake-word, endpointing, microphone, and local STT pipeline work.
 - [P1-03 speech output notes](docs/tickets/P1-03.md) record the markdown-to-speech, local Piper TTS, and interruptible playback work.
 - [P1-04 barge-in notes](docs/tickets/P1-04.md) record the VAD interruption loop, push-to-interrupt command, and target-hardware latency validation work.
-- [P1-05 agent adapter notes](docs/tickets/P1-05.md) record the opencode adapter, single-agent voice loop, and daemon agent-process ownership work.
+- [P1-05 agent adapter notes](docs/tickets/P1-05.md) record the opencode adapter, original single-agent voice loop, and daemon agent-process ownership work.
 - [P1-07 API backend notes](docs/tickets/P1-07.md) record the OpenAI-compatible STT/TTS backends, API failure handling, and optional local fallback work.
 - [P1-06 harness adapter notes](docs/tickets/P1-06.md) record the Claude Code and codex adapters plus the three-harness validation matrix.
+- [P2-01 Conductor core notes](docs/tickets/P2-01.md) record the multi-agent fleet lifecycle, per-agent restart policy, duplicate-name rejection, phonetic naming warnings, and live 16-agent validation.
 - [Example Earshot config](config.example.yaml) shows the complete YAML schema and defaults.
 - [P0-01 license gate](docs/licenses.md) records dependency license verdicts and the Earshot license recommendation.
 - [P0-01 VoiceMode notes](docs/voicemode-notes.md) record the VoiceMode design review and local Claude Code MCP smoke test.
@@ -84,3 +87,4 @@ Speech output converts streamed Markdown to speakable text sentence-by-sentence;
 - [P1-05 process notes](docs/tickets/P1-05.md)
 - [P1-07 process notes](docs/tickets/P1-07.md)
 - [P1-06 process notes](docs/tickets/P1-06.md)
+- [P2-01 process notes](docs/tickets/P2-01.md)

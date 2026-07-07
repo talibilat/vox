@@ -29,6 +29,27 @@ class ConfigError(Exception):
     """A config file problem, with the offending key path in the message."""
 
 
+class _StrictLoader(yaml.SafeLoader):
+    """SafeLoader that rejects duplicate mapping keys instead of silently
+    keeping the last one (two agents with the same spoken name would
+    otherwise collapse into one without a trace)."""
+
+
+def _strict_mapping(loader: _StrictLoader, node, deep=False):
+    seen = set()
+    for key_node, _value in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise ConfigError(
+                f"duplicate key {key!r} in config (line {key_node.start_mark.line + 1})"
+            )
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+
+_StrictLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _strict_mapping)
+
+
 @dataclass
 class WakeWordConfig:
     phrase: str = "hey earshot"
@@ -90,6 +111,7 @@ class AgentConfig:
     # "provider/model-id" (or the harness's own model naming); None uses the
     # harness-specific default chosen by its adapter.
     model: str | None = None
+    restart_on_death: bool = True  # fleet supervisor restarts this agent if it dies
     tmux_pane: str | None = None  # only for a harness on the tmux fallback path
 
 
@@ -211,6 +233,32 @@ def _check_model_pin(value: object, path: str) -> None:
         _fail(path, f"expected provider/model-id, got {value!r}")
 
 
+def _warn_phonetically_risky_names(names: list[str]) -> None:
+    """Warn (never fail) on spoken names likely to confuse STT: the plan's
+    mitigation is phonetically distinct, multi-syllable names."""
+    import difflib
+    import logging
+    import re
+
+    logger = logging.getLogger("earshot.config")
+    for name in names:
+        if len(re.findall(r"[aeiouy]+", name.lower())) <= 1:
+            logger.warning(
+                "agent name %r is short for speech recognition; "
+                "multi-syllable names transcribe more reliably",
+                name,
+            )
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            if difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() >= 0.75:
+                logger.warning(
+                    "agent names %r and %r sound alike and may be confused "
+                    "by speech recognition; pick more distinct names",
+                    a,
+                    b,
+                )
+
+
 def validate(config: Config) -> Config:
     """Validate every field; raise ConfigError with the key path on failure."""
     _check_str(config.wake_word.phrase, "wake_word.phrase")
@@ -260,7 +308,9 @@ def validate(config: Config) -> Config:
             _check_model_pin(agent.model, f"agents.{name}.model")
         else:
             _check_str(agent.model, f"agents.{name}.model", optional=True)
+        _check_bool(agent.restart_on_death, f"agents.{name}.restart_on_death")
         _check_str(agent.tmux_pane, f"agents.{name}.tmux_pane", optional=True)
+    _warn_phonetically_risky_names(list(config.agents))
 
     _check_range(config.barge_in.vad_threshold, 0.0, 1.0, "barge_in.vad_threshold")
     _check_str(config.barge_in.interrupt_hotkey, "barge_in.interrupt_hotkey", optional=True)
@@ -285,7 +335,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         write_default(config_path)
     raw = config_path.read_text()
     try:
-        data = yaml.safe_load(raw)
+        data = yaml.load(raw, Loader=_StrictLoader)
     except yaml.YAMLError as e:
         raise ConfigError(f"{config_path} is not valid YAML: {e}") from e
     if data is None:
@@ -338,6 +388,7 @@ agents:
     command: null           # optional command: opencode serve, claude --print, codex app-server
     workdir: "~"
     model: null             # null = the harness's default (opencode pins {model})
+    restart_on_death: true  # fleet supervisor restarts this agent if it dies
     tmux_pane: null         # only for a harness on the tmux fallback path
 
 barge_in:

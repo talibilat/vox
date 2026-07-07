@@ -196,6 +196,42 @@ def test_stale_pid_cleanup_preserves_replaced_pid_file(monkeypatch, daemon_confi
     assert pid_file.read_text() == "67890"
 
 
+def test_detached_start_waits_for_ready_signal_not_pid_file(monkeypatch, daemon_config):
+    class RunningProc:
+        pid = 12345
+        returncode = None
+
+        def poll(self):
+            return None
+
+    now = 0.0
+
+    def time_now():
+        return now
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    spawned = False
+
+    def popen(*_args, **_kwargs):
+        nonlocal spawned
+        spawned = True
+        return RunningProc()
+
+    def read_pid(_config):
+        return 12345 if spawned else None
+
+    monkeypatch.setattr(daemon.subprocess, "Popen", popen)
+    monkeypatch.setattr(daemon, "read_pid", read_pid)
+    monkeypatch.setattr(daemon.time, "time", time_now)
+    monkeypatch.setattr(daemon.time, "sleep", sleep)
+
+    with pytest.raises(RuntimeError, match="did not report ready"):
+        daemon.start(daemon_config, config_path=None)
+
+
 def test_config_error_exit_code(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("stt: {backend: remote}")

@@ -219,6 +219,22 @@ class TestConversationLoop:
         assert output.spoken[-1] == "Recovered answer."
         assert any("Restarting" in s for s in output.spoken)
 
+    def test_dead_agent_uses_supplied_restart_callback_before_retrying(self):
+        adapter = FakeAdapter([("die",), "Recovered answer."])
+        output = FakeOutput()
+        restarted = []
+
+        def restart():
+            restarted.append(True)
+            adapter.start()
+            return True
+
+        ConversationLoop(adapter, output, restart=restart).handle_transcript("do the thing")
+
+        assert restarted == [True]
+        assert adapter.prompts == ["do the thing", "do the thing"]
+        assert output.spoken[-1] == "Recovered answer."
+
     @pytest.mark.parametrize("method", ["stop", "start"])
     def test_restart_errors_never_escape_into_input_thread(self, method):
         class ExplodingRestartAdapter(FakeAdapter):
