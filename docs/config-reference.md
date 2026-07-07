@@ -58,7 +58,7 @@ A map of spoken name to agent definition; the map order matters only in that the
 | `restart_on_death` | `true` | The fleet supervisor restarts this agent if its process dies. |
 | `tmux_pane` | `null` | Setting this switches the agent to the generic tmux fallback transport; the value names the tmux session Earshot creates and owns. |
 
-Naming guidance: use phonetically distinct, multi-syllable names; validation warns about single-syllable names and sound-alike pairs because they transcribe unreliably.
+Naming guidance: use phonetically distinct, multi-syllable names; when multiple agents are configured, validation warns about single-syllable names and sound-alike pairs because they transcribe unreliably.
 
 ## barge_in
 

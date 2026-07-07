@@ -69,7 +69,7 @@ agents:
 - "agent status" answers like "marvin and olivia have finished; sebastian is still working."
 - A garbled name gets "Did you mean marvin?" instead of a silent misroute; answer "yes" to confirm.
 - Earshot spawns and supervises every agent itself (staggered startup, per-agent `restart_on_death` policy); nothing is started by hand.
-- Pick phonetically distinct, multi-syllable names; config validation warns about risky ones.
+- Pick phonetically distinct, multi-syllable names; multi-agent config validation warns about risky ones.
 
 ## Local vs API mode
 
