@@ -11,6 +11,10 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
     "PyYAML>=6",
+    "numpy>=1.24",
+    "openwakeword>=0.6",
+    "faster-whisper>=1.0",
+    "sounddevice>=0.4",
 ]
 
 [project.scripts]
@@ -20,6 +24,7 @@ earshot = "earshot.cli:main"
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    "soundfile>=0.12",
 ]
 
 [tool.setuptools.packages.find]
@@ -33,4 +38,5 @@ target-version = "py310"
 select = ["E", "F", "W", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]

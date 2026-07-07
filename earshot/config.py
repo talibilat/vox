@@ -280,7 +280,7 @@ wake_word:
   patience: 4               # consecutive windows above threshold to fire
 
 stt:
-  backend: local            # local | api
+  backend: local            # local works today; api is reserved for #10
   local:
     model: base.en          # faster-whisper model size
     device: cpu
