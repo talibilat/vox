@@ -11,10 +11,12 @@ import shutil
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from earshot.agents import AgentError, create_adapter, first_agent
+from earshot.agents import opencode as opencode_module
 from earshot.agents.base import AgentAdapter
 from earshot.agents.opencode import OpencodeAdapter
 from earshot.config import AgentConfig, Config
@@ -107,6 +109,28 @@ class TestOpencodeAdapter:
         assert not adapter.alive
         assert adapter._proc is None
 
+    @pytest.mark.parametrize("payload", [{}, {"data": {}}, {"data": None}])
+    def test_malformed_session_response_raises_agent_error(self, monkeypatch, payload):
+        adapter = OpencodeAdapter("main", fake_agent_config(model="opencode/some-model"))
+        monkeypatch.setattr(adapter, "_api", lambda *args, **kwargs: payload)
+
+        with pytest.raises(AgentError, match="could not create a session"):
+            adapter._create_session()
+
+    def test_sse_keepalives_do_not_prevent_stall_timeout(self, monkeypatch):
+        adapter = OpencodeAdapter("main", fake_agent_config())
+        adapter._session_id = "ses_fake0000000000000000000000"
+        adapter._proc = SimpleNamespace(poll=lambda: None)
+        monkeypatch.setattr(opencode_module, "TURN_STALL_TIMEOUT", 0.02)
+
+        def keepalives():
+            for _ in range(5):
+                time.sleep(0.01)
+                yield b": keepalive\n"
+
+        with pytest.raises(AgentError, match="stalled mid-turn"):
+            list(adapter._stream_turn(keepalives()))
+
     def test_prompt_api_failure_raises_agent_error(self, adapter):
         adapter._session_id = "missing"
         with pytest.raises(AgentError, match="could not prompt"):
@@ -194,6 +218,26 @@ class TestConversationLoop:
         assert adapter.prompts == ["do the thing", "do the thing"]
         assert output.spoken[-1] == "Recovered answer."
         assert any("Restarting" in s for s in output.spoken)
+
+    @pytest.mark.parametrize("method", ["stop", "start"])
+    def test_restart_errors_never_escape_into_input_thread(self, method):
+        class ExplodingRestartAdapter(FakeAdapter):
+            def stop(self):
+                if method == "stop":
+                    raise RuntimeError("stop exploded")
+                super().stop()
+
+            def start(self):
+                if method == "start":
+                    raise RuntimeError("start exploded")
+                super().start()
+
+        adapter = ExplodingRestartAdapter([("die",)])
+        output = FakeOutput()
+
+        ConversationLoop(adapter, output).handle_transcript("do the thing")
+
+        assert any("could not restart" in s.lower() for s in output.spoken)
 
     def test_error_never_escapes_into_input_thread(self):
         class ExplodingOutput(FakeOutput):

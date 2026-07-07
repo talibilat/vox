@@ -129,9 +129,9 @@ class OpencodeAdapter(AgentAdapter):
         body = {"model": {"providerID": provider, "id": model_id}}
         try:
             data = self._api("POST", "/api/session", body)
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError) as exc:
+            return data["data"]["id"]
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
             raise AgentError(f"could not create a session on agent {self._name}: {exc}") from exc
-        return data["data"]["id"]
 
     def _api(self, method: str, path: str, body: dict | None = None, timeout: float = 30):
         request = urllib.request.Request(
@@ -155,8 +155,11 @@ class OpencodeAdapter(AgentAdapter):
 
     def _stream_turn(self, events) -> Iterator[str]:
         """Yield text deltas for our session until the final step ends."""
+        progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
         try:
             for raw_line in events:
+                if time.monotonic() >= progress_deadline:
+                    raise AgentError(f"agent {self._name} stalled mid-turn")
                 line = raw_line.decode("utf-8", "replace").strip()
                 if not line.startswith("data: "):
                     if not self.alive:
@@ -174,12 +177,14 @@ class OpencodeAdapter(AgentAdapter):
                     continue
                 etype = event.get("type", "")
                 if etype == "session.next.text.delta":
+                    progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
                     yield payload.get("delta") or ""
                 elif etype in ("session.error", "session.next.step.failed"):
                     raise AgentError(
                         f"agent {self._name} reported an error: {json.dumps(payload)[:200]}"
                     )
                 elif etype == "session.next.step.ended":
+                    progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
                     finish = payload.get("finish")
                     if finish == "stop":
                         return

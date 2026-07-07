@@ -53,6 +53,10 @@ class ConversationLoop:
             logger.error("agent restart failed: %s", restart_error)
             self._say("I could not restart the agent. Check the logs.")
             return
+        except Exception:
+            logger.exception("agent restart failed unexpectedly")
+            self._say("I could not restart the agent. Check the logs.")
+            return
         self._say("The agent is back, in a fresh session. Repeating your request.")
         try:
             self._speak_response(text)
