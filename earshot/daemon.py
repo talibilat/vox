@@ -207,6 +207,7 @@ def run(config: Config) -> None:
     pipeline_thread = None
     pipeline_error: BaseException | None = None
     fleet = None
+    pool = None
     # SIGUSR1 is the push-to-interrupt escape hatch (`earshot interrupt`).
     # Registered unconditionally and BEFORE the voice loop exists: the
     # default SIGUSR1 action would otherwise terminate a daemon that is
@@ -226,15 +227,22 @@ def run(config: Config) -> None:
         active = fleet.get(active_name)
         if active.status == "dead":
             raise RuntimeError(f"the active agent {active_name!r} failed to start")
-        # The conversation loop owns turn-triggered recovery for the active
-        # agent; the supervisor owns everyone else, and the router moves the
-        # exemption as spoken addressing switches agents.
-        fleet.start_supervision(active_name=active_name)
+        # Watchers run every turn and never restart agents themselves, so
+        # the supervisor owns restarts for the whole fleet, active included.
+        fleet.start_supervision()
 
-        from earshot.conductor import Router
+        from earshot.conductor import Router, WatcherPool
 
         output = OutputPipeline(config)
-        router = Router(fleet, output)
+        pool = WatcherPool(fleet, output)
+        router = Router(
+            fleet,
+            output,
+            read_response=pool.latest_response_text,
+            fleet_status=pool.status_line,
+            dispatch=pool.dispatch,
+        )
+        pool.set_active_probe(lambda name: router.active_agent == name)
         pipeline = InterruptibleVoiceLoop(config, router, output)
 
         def _run_pipeline() -> None:
@@ -266,6 +274,8 @@ def run(config: Config) -> None:
         if pipeline is not None:
             pipeline.stop()
             pipeline_thread.join(timeout=5)
+        if pool is not None:
+            pool.stop()
         if fleet is not None:
             fleet.stop_all()
         # Only remove the PID file this process owns; never clobber a file

@@ -4,10 +4,11 @@ The Router is the multi-agent transcript handler (the single-agent case is
 just a one-name fleet, so the daemon always uses it). Classification order:
 
 1. fleet command  reserved phrases like "agent status" are NEVER sent to an
-                  agent as prompt text; #13 owns what status actually says.
+                  agent as prompt text; the watcher pool supplies the spoken
+                  fleet roll-call when it is wired in.
 2. read request   "<name>, what's your response" style utterances go to the
-                  output layer seam (#13 implements it; the default politely
-                  declines).
+                  output layer seam (watcher mode reads buffered responses;
+                  the default politely declines).
 3. agent command  a confidently matched leading name routes the command and
                   makes that agent active.
 4. clarification  an ambiguous name match asks aloud and holds the command;
@@ -50,16 +51,22 @@ class Router:
         output: OutputPipeline,
         read_response: Callable[[str], str] | None = None,
         fleet_status: Callable[[], str] | None = None,
+        dispatch: Callable[[str, str], None] | None = None,
     ):
         self._fleet = fleet
         self._output = output
         self._read_response = read_response
         self._fleet_status = fleet_status
+        # With an external dispatcher (the watcher pool), turns run on the
+        # watchers' threads and the fleet supervisor owns ALL restarts, so
+        # the active-agent exemption only applies in ConversationLoop mode.
+        self._dispatch = dispatch
+        self._exempt_active = dispatch is None
         self._loops: dict[str, ConversationLoop] = {}
         names = fleet.registry.names()
         self._active = names[0] if names else None
         self._pending: tuple[str, str] | None = None  # (candidate name, held command)
-        if self._active:
+        if self._active and self._exempt_active:
             fleet.set_active(self._active)
 
     @property
@@ -135,6 +142,10 @@ class Router:
             self.say(f"{name} is not running.")
             return
         self._switch_active(name)
+        logger.info("routing to %s: %s", name, command)
+        if self._dispatch is not None:
+            self._dispatch(name, command)
+            return
         loop = self._loops.get(name)
         if loop is None:
             # Turn-triggered recovery goes through the fleet so the registry
@@ -143,14 +154,14 @@ class Router:
                 record.adapter, self._output, restart=lambda n=name: self._fleet.restart(n)
             )
             self._loops[name] = loop
-        logger.info("routing to %s: %s", name, command)
         loop.handle_transcript(command)
 
     def _switch_active(self, name: str) -> None:
         if name != self._active:
             logger.info("active agent: %s -> %s", self._active, name)
         self._active = name
-        self._fleet.set_active(name)
+        if self._exempt_active:
+            self._fleet.set_active(name)
 
     def _speak_response_of(self, name: str | None) -> None:
         if name is None:

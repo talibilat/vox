@@ -2,9 +2,9 @@
 
 This is the internal API the rest of Phase 2 builds on: voice addressing
 (#12) resolves spoken names against it, and output watching (#13) attaches
-to the records it holds. Lifecycle status here is process-level
-(starting / ready / idle / dead, plus busy reserved for turn tracking);
-richer idle-detection semantics belong to #13.
+to the records it holds. Lifecycle status is process-level until watchers
+drive turn state: starting/ready/idle/dead for lifecycle, busy while a turn
+runs, and finished when an unread response is buffered.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from earshot.agents import AgentAdapter
 from earshot.config import AgentConfig
 
-STATUSES = ("starting", "ready", "busy", "idle", "dead")
+STATUSES = ("starting", "ready", "busy", "idle", "finished", "dead")
 
 
 @dataclass
