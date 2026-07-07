@@ -107,6 +107,35 @@ def test_foreground_runs_and_handles_sigterm(isolated_config, tmp_path):
     assert not pid_file.exists()
 
 
+def test_foreground_refused_when_daemon_running(isolated_config, tmp_path):
+    assert cli("start", config=isolated_config).returncode == 0
+    try:
+        pid_before = (tmp_path / "earshot.pid").read_text()
+        second = cli("start", "--foreground", config=isolated_config)
+        assert second.returncode == 1
+        assert "already running" in second.stderr
+        # The refused foreground process must not touch the owner's PID file.
+        assert (tmp_path / "earshot.pid").read_text() == pid_before
+        assert cli("status", config=isolated_config).returncode == 0
+    finally:
+        cli("stop", config=isolated_config)
+
+
+def test_live_but_unowned_pid_treated_as_stale(isolated_config, tmp_path):
+    # A live process that is not an earshot daemon (PID-number reuse case).
+    sleeper = subprocess.Popen(["sleep", "30"])
+    try:
+        (tmp_path / "earshot.pid").write_text(str(sleeper.pid))
+        status = cli("status", config=isolated_config)
+        assert status.returncode == 1
+        assert "not running" in status.stdout
+        assert not (tmp_path / "earshot.pid").exists()
+        assert sleeper.poll() is None  # the foreign process must not be touched
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+
+
 def test_config_error_exit_code(tmp_path):
     bad = tmp_path / "bad.yaml"
     bad.write_text("stt: {backend: remote}")

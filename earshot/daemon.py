@@ -28,8 +28,26 @@ def _log_path(config: Config) -> Path:
     return Path(config.daemon.log_file).expanduser()
 
 
+def _looks_like_earshot(pid: int) -> bool:
+    """Best-effort check that a PID actually belongs to an earshot process,
+    so a recycled PID number is not mistaken for a running daemon."""
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True  # cannot verify; err on the side of "running"
+    if result.returncode != 0:
+        return False
+    return "earshot" in result.stdout
+
+
 def read_pid(config: Config) -> int | None:
-    """Return the running daemon's PID, or None. Cleans up stale PID files."""
+    """Return the running daemon's PID, or None. Cleans up stale PID files,
+    including a live-but-unowned PID left behind by PID-number reuse."""
     pid_file = _pid_path(config)
     try:
         pid = int(pid_file.read_text().strip())
@@ -41,7 +59,10 @@ def read_pid(config: Config) -> int | None:
         pid_file.unlink(missing_ok=True)
         return None
     except PermissionError:
-        return pid
+        pass  # process exists; fall through to the identity check
+    if not _looks_like_earshot(pid):
+        pid_file.unlink(missing_ok=True)
+        return None
     return pid
 
 
@@ -95,6 +116,10 @@ def stop(config: Config) -> int:
 def run(config: Config) -> None:
     """The daemon main loop, in the current process (foreground mode uses
     this directly; `start` runs it in a detached child)."""
+    existing = read_pid(config)
+    if existing is not None and existing != os.getpid():
+        raise RuntimeError(f"daemon already running (pid {existing})")
+
     log_file = _log_path(config)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     handlers: list[logging.Handler] = [logging.FileHandler(log_file)]
@@ -129,5 +154,11 @@ def run(config: Config) -> None:
         while not stopping:
             time.sleep(0.2)
     finally:
-        pid_file.unlink(missing_ok=True)
+        # Only remove the PID file this process owns; never clobber a file
+        # that another daemon has since written.
+        try:
+            if pid_file.read_text().strip() == str(os.getpid()):
+                pid_file.unlink()
+        except (FileNotFoundError, ValueError):
+            pass
         logger.info("earshot daemon stopped")
