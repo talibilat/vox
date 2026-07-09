@@ -25,13 +25,27 @@ import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
-from earshot.agents.base import AgentAdapter, AgentError
+from earshot.agents.base import AgentAdapter, AgentError, _stop_process
 from earshot.config import AgentConfig
 
 logger = logging.getLogger("earshot.agents.opencode")
 
 READY_TIMEOUT = 30.0
 TURN_STALL_TIMEOUT = 120.0  # max quiet time mid-turn before we call it stalled
+
+
+def _decode_sse_event(raw_line: bytes) -> tuple[bool, dict | None]:
+    line = raw_line.decode("utf-8", "replace").strip()
+    if not line.startswith("data: "):
+        return False, None
+    try:
+        return True, json.loads(line[6:])
+    except json.JSONDecodeError:
+        return True, None
+
+
+def _event_payload(event: dict) -> dict:
+    return event.get("data") or event.get("properties") or {}
 
 
 def _free_port() -> int:
@@ -79,13 +93,8 @@ class OpencodeAdapter(AgentAdapter):
         )
 
     def stop(self) -> None:
-        if self._proc is not None and self._proc.poll() is None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-                self._proc.wait()
+        if self._proc is not None:
+            _stop_process(self._proc)
         self._proc = None
 
     def send(self, prompt: str) -> Iterator[str]:
@@ -158,43 +167,67 @@ class OpencodeAdapter(AgentAdapter):
                 f"could not open the event stream for agent {self._name}: {exc}"
             ) from exc
 
+    def _payload_for_session(self, event: dict) -> dict | None:
+        payload = _event_payload(event)
+        session = payload.get("sessionID") or (event.get("durable") or {}).get("aggregateID")
+        if session and session != self._session_id:
+            return None
+        return payload
+
+    def _handle_turn_event(self, event: dict, payload: dict) -> tuple[str | None, bool, bool]:
+        etype = event.get("type", "")
+        if etype == "session.next.text.delta":
+            return payload.get("delta") or "", False, True
+        if etype in ("session.error", "session.next.step.failed"):
+            raise AgentError(f"agent {self._name} reported an error: {json.dumps(payload)[:200]}")
+        if etype == "session.next.step.ended":
+            finish = payload.get("finish")
+            if finish == "stop":
+                return None, True, True
+            if finish not in (None, "tool-calls"):
+                raise AgentError(f"agent {self._name} turn ended abnormally ({finish})")
+            return None, False, True
+        return None, False, False
+
+    def _session_event(self, raw_line: bytes) -> tuple[dict, dict] | None:
+        is_data_line, event = _decode_sse_event(raw_line)
+        if not is_data_line:
+            if not self.alive:
+                raise AgentError(f"agent {self._name} died mid-turn")
+            return None
+        if event is None:
+            return None
+        payload = self._payload_for_session(event)
+        if payload is None:
+            return None
+        return event, payload
+
+    def _advance_turn_line(
+        self, raw_line: bytes, progress_deadline: float
+    ) -> tuple[str | None, bool, float]:
+        if time.monotonic() >= progress_deadline:
+            raise AgentError(f"agent {self._name} stalled mid-turn")
+        session_event = self._session_event(raw_line)
+        if session_event is None:
+            return None, False, progress_deadline
+        event, payload = session_event
+        delta, done, made_progress = self._handle_turn_event(event, payload)
+        if made_progress:
+            progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
+        return delta, done, progress_deadline
+
     def _stream_turn(self, events) -> Iterator[str]:
         """Yield text deltas for our session until the final step ends."""
         progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
         try:
             for raw_line in events:
-                if time.monotonic() >= progress_deadline:
-                    raise AgentError(f"agent {self._name} stalled mid-turn")
-                line = raw_line.decode("utf-8", "replace").strip()
-                if not line.startswith("data: "):
-                    if not self.alive:
-                        raise AgentError(f"agent {self._name} died mid-turn")
-                    continue
-                try:
-                    event = json.loads(line[6:])
-                except json.JSONDecodeError:
-                    continue
-                payload = event.get("data") or event.get("properties") or {}
-                session = payload.get("sessionID") or (event.get("durable") or {}).get(
-                    "aggregateID"
+                delta, done, progress_deadline = self._advance_turn_line(
+                    raw_line, progress_deadline
                 )
-                if session and session != self._session_id:
-                    continue
-                etype = event.get("type", "")
-                if etype == "session.next.text.delta":
-                    progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
-                    yield payload.get("delta") or ""
-                elif etype in ("session.error", "session.next.step.failed"):
-                    raise AgentError(
-                        f"agent {self._name} reported an error: {json.dumps(payload)[:200]}"
-                    )
-                elif etype == "session.next.step.ended":
-                    progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
-                    finish = payload.get("finish")
-                    if finish == "stop":
-                        return
-                    if finish not in (None, "tool-calls"):
-                        raise AgentError(f"agent {self._name} turn ended abnormally ({finish})")
+                if delta is not None:
+                    yield delta
+                if done:
+                    return
         except TimeoutError as exc:
             raise AgentError(f"agent {self._name} stalled mid-turn") from exc
         except OSError as exc:

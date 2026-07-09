@@ -28,13 +28,26 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from earshot.agents.base import AgentAdapter, AgentError
+from earshot.agents.base import AgentAdapter, AgentError, _stop_process
 from earshot.config import AgentConfig
 
 logger = logging.getLogger("earshot.agents.claude_code")
 
 TURN_TIMEOUT = 600.0  # coding turns can run long; the stall guard is per-line
 LINE_STALL_TIMEOUT = 120.0  # max quiet time between output lines
+
+
+def _decode_json_event(line: str) -> dict | None:
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+
+def _assistant_text(event: dict) -> Iterator[str]:
+    for block in event.get("message", {}).get("content", []):
+        if block.get("type") == "text" and block.get("text"):
+            yield block["text"]
 
 
 class ClaudeCodeAdapter(AgentAdapter):
@@ -62,13 +75,8 @@ class ClaudeCodeAdapter(AgentAdapter):
         self._started = False
         with self._lock:
             proc = self._turn_proc
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+        if proc is not None:
+            _stop_process(proc)
 
     def send(self, prompt: str) -> Iterator[str]:
         if not self._started:
@@ -96,14 +104,14 @@ class ClaudeCodeAdapter(AgentAdapter):
                 proc.stdin.write(json.dumps(message) + "\n")
                 proc.stdin.close()
             except (OSError, ValueError, AttributeError) as exc:
-                self._stop_turn_process(proc)
+                _stop_process(proc)
                 raise AgentError(f"agent {self._name} is not accepting input: {exc}") from exc
             yield from self._stream_turn(proc)
         finally:
             with self._lock:
                 self._turn_proc = None
             if proc.poll() is None:
-                self._stop_turn_process(proc)
+                _stop_process(proc)
 
     # --- internals -----------------------------------------------------
 
@@ -133,30 +141,33 @@ class ClaudeCodeAdapter(AgentAdapter):
 
     def _stream_turn(self, proc: subprocess.Popen) -> Iterator[str]:
         got_result = False
-        for line in self._lines_with_stall_guard(proc):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for event in self._turn_events(proc):
             etype = event.get("type")
-            if session := event.get("session_id"):
-                self._session_id = session
             if etype == "assistant":
-                for block in event.get("message", {}).get("content", []):
-                    if block.get("type") == "text" and block.get("text"):
-                        yield block["text"]
+                yield from _assistant_text(event)
             elif etype == "result":
                 got_result = True
-                if event.get("is_error"):
-                    raise AgentError(
-                        f"agent {self._name} reported an error: "
-                        f"{str(event.get('result', ''))[:200]}"
-                    )
+                self._raise_for_result_error(event)
                 break
         exit_code = proc.wait(timeout=10)
         if not got_result:
             raise AgentError(
                 f"agent {self._name} turn ended without a result (exit code {exit_code})"
+            )
+
+    def _turn_events(self, proc: subprocess.Popen) -> Iterator[dict]:
+        for line in self._lines_with_stall_guard(proc):
+            event = _decode_json_event(line)
+            if event is None:
+                continue
+            if session := event.get("session_id"):
+                self._session_id = session
+            yield event
+
+    def _raise_for_result_error(self, event: dict) -> None:
+        if event.get("is_error"):
+            raise AgentError(
+                f"agent {self._name} reported an error: {str(event.get('result', ''))[:200]}"
             )
 
     def _lines_with_stall_guard(self, proc: subprocess.Popen) -> Iterator[str]:
@@ -181,13 +192,3 @@ class ClaudeCodeAdapter(AgentAdapter):
                     )
                 return
             yield line.strip()
-
-    def _stop_turn_process(self, proc: subprocess.Popen) -> None:
-        if proc.poll() is not None:
-            return
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()

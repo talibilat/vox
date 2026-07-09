@@ -26,7 +26,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from earshot.agents.base import AgentAdapter, AgentError
+from earshot.agents.base import AgentAdapter, AgentError, _stop_process
 from earshot.config import AgentConfig
 
 logger = logging.getLogger("earshot.agents.codex")
@@ -65,27 +65,9 @@ class CodexAdapter(AgentAdapter):
         except OSError as exc:
             raise AgentError(f"could not launch agent {self._name}: {exc}") from exc
         try:
-            # Fresh per-process state: a previous (dead) process's reader
-            # thread wakes on EOF asynchronously and poisons every waiter it
-            # can see with a "died" sentinel; giving each process its own
-            # dict and queue makes that EOF harmless after a restart.
-            self._responses = {}
-            self._notifications = queue.Queue()
-            self._reader = threading.Thread(
-                target=self._pump,
-                args=(self._proc.stdout, self._responses, self._notifications),
-                daemon=True,
-                name=f"codex-{self._name}",
-            )
-            self._reader.start()
+            self._start_reader()
             self._request("initialize", {"clientInfo": {"name": "earshot", "version": "0.1"}})
-            params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
-            if self._config.model:
-                params["model"] = self._config.model
-            result = self._request("thread/start", params)
-            self._thread_id = result.get("thread", {}).get("id") or result.get("threadId")
-            if not self._thread_id:
-                raise AgentError(f"agent {self._name} did not return a thread id")
+            self._thread_id = self._start_thread()
         except Exception:
             self.stop()
             raise
@@ -94,13 +76,8 @@ class CodexAdapter(AgentAdapter):
         )
 
     def stop(self) -> None:
-        if self._proc is not None and self._proc.poll() is None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-                self._proc.wait()
+        if self._proc is not None:
+            _stop_process(self._proc)
         self._proc = None
 
     def send(self, prompt: str) -> Iterator[str]:
@@ -111,6 +88,29 @@ class CodexAdapter(AgentAdapter):
             "turn/start",
             {"threadId": self._thread_id, "input": [{"type": "text", "text": prompt}]},
         )
+        for note in self._turn_notifications():
+            done, delta = self._handle_turn_notification(note)
+            if delta is not None:
+                yield delta
+            if done:
+                return
+
+    def _handle_turn_notification(self, note: dict) -> tuple[bool, str | None]:
+        method = note.get("method", "")
+        params = note.get("params", {})
+        if method == "item/agentMessage/delta":
+            return False, params.get("delta") or ""
+        if method == "turn/completed":
+            turn = params.get("turn", {})
+            error = turn.get("error")
+            if error or turn.get("status") == "failed":
+                raise AgentError(f"agent {self._name} reported an error: {str(error)[:200]}")
+            return True, None
+        if method == "error":
+            raise AgentError(f"agent {self._name} reported an error: {json.dumps(params)[:200]}")
+        return False, None
+
+    def _turn_notifications(self) -> Iterator[dict]:
         while True:
             try:
                 note = self._notifications.get(timeout=TURN_STALL_TIMEOUT)
@@ -118,22 +118,9 @@ class CodexAdapter(AgentAdapter):
                 raise AgentError(f"agent {self._name} stalled mid-turn") from None
             if note is None:  # reader thread saw EOF
                 raise AgentError(f"agent {self._name} died mid-turn")
-            method = note.get("method", "")
             params = note.get("params", {})
-            if params.get("threadId") not in (None, self._thread_id):
-                continue
-            if method == "item/agentMessage/delta":
-                yield params.get("delta") or ""
-            elif method == "turn/completed":
-                turn = params.get("turn", {})
-                error = turn.get("error")
-                if error or turn.get("status") == "failed":
-                    raise AgentError(f"agent {self._name} reported an error: {str(error)[:200]}")
-                return
-            elif method == "error":
-                raise AgentError(
-                    f"agent {self._name} reported an error: {json.dumps(params)[:200]}"
-                )
+            if params.get("threadId") in (None, self._thread_id):
+                yield note
 
     # --- internals -----------------------------------------------------
 
@@ -163,6 +150,29 @@ class CodexAdapter(AgentAdapter):
             )
         return response.get("result", {})
 
+    def _start_reader(self) -> None:
+        # Fresh per-process state: a previous dead process's reader wakes on EOF
+        # asynchronously, so give each process its own waiters and notifications.
+        self._responses = {}
+        self._notifications = queue.Queue()
+        self._reader = threading.Thread(
+            target=self._pump,
+            args=(self._proc.stdout, self._responses, self._notifications),
+            daemon=True,
+            name=f"codex-{self._name}",
+        )
+        self._reader.start()
+
+    def _start_thread(self) -> str:
+        params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
+        if self._config.model:
+            params["model"] = self._config.model
+        result = self._request("thread/start", params)
+        thread_id = result.get("thread", {}).get("id") or result.get("threadId")
+        if not thread_id:
+            raise AgentError(f"agent {self._name} did not return a thread id")
+        return thread_id
+
     def _pump(self, stream, responses: dict, notifications: queue.Queue) -> None:
         """Reader thread: route responses to callers, notifications to send().
 
@@ -171,20 +181,22 @@ class CodexAdapter(AgentAdapter):
         requests.
         """
         for line in stream:
-            line = line.strip()
-            if not line:
+            message = _decode_pump_message(line)
+            if message is None:
                 continue
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "id" in message and ("result" in message or "error" in message):
-                with self._lock:
-                    waiter = responses.get(message["id"])
-                if waiter is not None:
-                    waiter.put(message)
-            elif "method" in message:
-                notifications.put(message)
+            self._route_pump_message(message, responses, notifications)
+        self._wake_pump_waiters(responses, notifications)
+
+    def _route_pump_message(self, message, responses: dict, notifications: queue.Queue) -> None:
+        if "id" in message and ("result" in message or "error" in message):
+            with self._lock:
+                waiter = responses.get(message["id"])
+            if waiter is not None:
+                waiter.put(message)
+        elif "method" in message:
+            notifications.put(message)
+
+    def _wake_pump_waiters(self, responses: dict, notifications: queue.Queue) -> None:
         # EOF: wake up everything that might be waiting on THIS process.
         with self._lock:
             waiters = list(responses.values())
@@ -199,3 +211,13 @@ class CodexAdapter(AgentAdapter):
                     return
         except queue.Empty:
             pass
+
+
+def _decode_pump_message(line: str):
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None

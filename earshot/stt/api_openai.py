@@ -20,6 +20,7 @@ import wave
 
 import numpy as np
 
+from earshot.api_fallback import get_or_create_fallback
 from earshot.stt.base import SttBackend
 
 logger = logging.getLogger("earshot.stt.api")
@@ -125,10 +126,10 @@ class ApiSttBackend(SttBackend):
         return text.strip()
 
     def _get_fallback(self) -> SttBackend | None:
-        if self._fallback is None and self._fallback_factory is not None:
-            try:
-                self._fallback = self._fallback_factory()
-            except Exception:
-                logger.exception("could not create the local STT fallback")
-                self._fallback_factory = None
+        self._fallback, self._fallback_factory = get_or_create_fallback(
+            self._fallback,
+            self._fallback_factory,
+            logger,
+            "STT",
+        )
         return self._fallback

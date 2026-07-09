@@ -88,10 +88,7 @@ class _StreamConverter:
             out.extend(self._close_fence())
         if self._table is not None:
             out.extend(self._close_table())
-        remainder = " ".join([self._held, *self._chunker.flush()]).strip()
-        self._held = ""
-        if remainder:
-            out.extend(self._convert(remainder))
+        out.extend(self._flush_text_run())
         return out
 
     @staticmethod
@@ -103,41 +100,53 @@ class _StreamConverter:
         unfed = line[self._fed :]
         self._fed = 0
         if self._fence is not None:
-            self._fence.append(line)
-            if _FENCE.match(line):
-                return self._close_fence()
-            return []
+            return self._line_in_fence(line)
         if _FENCE.match(line):
             out = self._end_text_run()
             self._fence = [line]
             return out
         if self._table is not None:
-            if "|" in line:
-                self._table.append(line)
-                return []
-            out = self._close_table()
-            out.extend(self._line(line))
-            return out
+            return self._line_in_table(line)
         if _TABLE_LEADING_PIPE.match(line):
             out = self._end_text_run()
             self._table = [line]
             return out
+        return self._line_as_text_or_table_header(line, unfed)
+
+    def _line_as_text_or_table_header(self, line: str, unfed: str) -> list[str]:
         if self._pending_table_header is not None:
-            header = self._pending_table_header
-            self._pending_table_header = None
-            if _TABLE_SEPARATOR.match(line):
-                out = self._end_text_run()
-                self._table = [header, line]
-                return out
-            out = self._stream_text(header + "\n")
-            out.extend(self._line(line))
-            return out
+            return self._line_after_pending_table_header(line)
         if "|" in line:
             self._pending_table_header = line
             return []
         if not line.strip():
             return self._end_text_run()
         return self._stream_text(unfed + "\n")
+
+    def _line_in_fence(self, line: str) -> list[str]:
+        self._fence.append(line)
+        if _FENCE.match(line):
+            return self._close_fence()
+        return []
+
+    def _line_in_table(self, line: str) -> list[str]:
+        if "|" in line:
+            self._table.append(line)
+            return []
+        out = self._close_table()
+        out.extend(self._line(line))
+        return out
+
+    def _line_after_pending_table_header(self, line: str) -> list[str]:
+        header = self._pending_table_header
+        self._pending_table_header = None
+        if _TABLE_SEPARATOR.match(line):
+            out = self._end_text_run()
+            self._table = [header, line]
+            return out
+        out = self._stream_text(header + "\n")
+        out.extend(self._line(line))
+        return out
 
     def _stream_text(self, text: str) -> list[str]:
         out: list[str] = []
@@ -150,6 +159,9 @@ class _StreamConverter:
 
     def _end_text_run(self) -> list[str]:
         """A blank line or structural switch ends the open text run."""
+        return self._flush_text_run()
+
+    def _flush_text_run(self) -> list[str]:
         out: list[str] = []
         remainder = " ".join([self._held, *self._chunker.flush()]).strip()
         self._held = ""

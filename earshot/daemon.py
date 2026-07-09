@@ -72,10 +72,10 @@ def _is_earshot_daemon_argv(argv: list[str]) -> bool:
     return command_args == ["run"] or command_args == ["start", "--foreground"]
 
 
-def _unlink_pid_if_matches(pid_file: Path, pid: int) -> None:
+def _unlink_if_matches(path: Path, contents: int | str) -> None:
     try:
-        if pid_file.read_text().strip() == str(pid):
-            pid_file.unlink(missing_ok=True)
+        if path.read_text().strip() == str(contents):
+            path.unlink(missing_ok=True)
     except FileNotFoundError:
         pass
 
@@ -91,12 +91,12 @@ def read_pid(config: Config) -> int | None:
     try:
         os.kill(pid, 0)  # existence check only
     except ProcessLookupError:
-        _unlink_pid_if_matches(pid_file, pid)
+        _unlink_if_matches(pid_file, pid)
         return None
     except PermissionError:
         pass  # process exists; fall through to the identity check
     if not _looks_like_earshot(pid):
-        _unlink_pid_if_matches(pid_file, pid)
+        _unlink_if_matches(pid_file, pid)
         return None
     return pid
 
@@ -110,18 +110,37 @@ def start(config: Config, config_path: str | None) -> int:
     ready_file.unlink(missing_ok=True)
     log_file = _log_path(config)
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "earshot.cli"]
-    if config_path:
-        cmd += ["--config", config_path]
-    cmd += ["run"]
     with open(log_file, "ab") as log:
         proc = subprocess.Popen(
-            cmd,
+            _daemon_command(config_path),
             stdout=log,
             stderr=log,
             stdin=subprocess.DEVNULL,
             start_new_session=True,  # survive the parent's terminal
         )
+    return _wait_until_ready(config, proc, ready_file, log_file)
+
+
+def _daemon_command(config_path: str | None) -> list[str]:
+    cmd = [sys.executable, "-m", "earshot.cli"]
+    if config_path:
+        cmd += ["--config", config_path]
+    return cmd + ["run"]
+
+
+def _ready_pid(ready_file: Path) -> int | None:
+    try:
+        return int(ready_file.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _wait_until_ready(
+    config: Config,
+    proc: subprocess.Popen,
+    ready_file: Path,
+    log_file: Path,
+) -> int:
     # The child writes its ready file after startup completes so `start` only
     # returns once the daemon can handle work.
     deadline = time.time() + START_READY_TIMEOUT_SECONDS
@@ -130,12 +149,8 @@ def start(config: Config, config_path: str | None) -> int:
             raise RuntimeError(
                 f"daemon exited immediately (exit code {proc.returncode}); see {log_file}"
             )
-        if read_pid(config) == proc.pid:
-            try:
-                if int(ready_file.read_text().strip()) == proc.pid:
-                    return proc.pid
-            except (FileNotFoundError, ValueError):
-                pass
+        if read_pid(config) == proc.pid and _ready_pid(ready_file) == proc.pid:
+            return proc.pid
         time.sleep(0.05)
     raise RuntimeError(
         f"daemon did not report ready within {START_READY_TIMEOUT_SECONDS}s; see {log_file}"
@@ -165,13 +180,7 @@ def stop(config: Config) -> int:
     raise RuntimeError(f"daemon (pid {pid}) did not exit within 10s")
 
 
-def run(config: Config) -> None:
-    """The daemon main loop, in the current process (foreground mode uses
-    this directly; `start` runs it in a detached child)."""
-    existing = read_pid(config)
-    if existing is not None and existing != os.getpid():
-        raise RuntimeError(f"daemon already running (pid {existing})")
-
+def _configure_logging(config: Config) -> None:
     log_file = _log_path(config)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     handlers: list[logging.Handler] = [logging.FileHandler(log_file)]
@@ -183,6 +192,79 @@ def run(config: Config) -> None:
         handlers=handlers,
         force=True,
     )
+
+
+def _stop_runtime(pipeline, pipeline_thread, pool, fleet, pid_file: Path, ready_file: Path) -> None:
+    if pipeline is not None:
+        pipeline.stop()
+        if pipeline_thread is not None:
+            pipeline_thread.join(timeout=5)
+    if pool is not None:
+        pool.stop()
+    if fleet is not None:
+        fleet.stop_all()
+    # Only remove files this process owns; never clobber files another daemon
+    # has since written.
+    _unlink_if_matches(pid_file, os.getpid())
+    _unlink_if_matches(ready_file, os.getpid())
+
+
+def _start_voice_runtime(config: Config):
+    from earshot.agents import first_agent
+    from earshot.barge import InterruptibleVoiceLoop
+    from earshot.conductor import Fleet, Router, WatcherPool
+    from earshot.output import OutputPipeline
+
+    pipeline_error: list[BaseException] = []
+    # Single-agent operation is the degenerate case of a one-agent fleet: one
+    # code path from Phase 1 through 16 agents.
+    fleet = Fleet(config)
+    fleet.start_all()
+    active_name, _ = first_agent(config)
+    active = fleet.get(active_name)
+    if active.status == "dead":
+        raise RuntimeError(f"the active agent {active_name!r} failed to start")
+    # Watchers run every turn and never restart agents themselves, so the
+    # supervisor owns restarts for the whole fleet, active included.
+    fleet.start_supervision()
+
+    output = OutputPipeline(config)
+    pool = WatcherPool(fleet, output)
+    router = Router(
+        fleet,
+        output,
+        read_response=pool.latest_response_text,
+        fleet_status=pool.status_line,
+        dispatch=pool.dispatch,
+    )
+    pool.set_active_probe(lambda name: router.active_agent == name)
+    pipeline = InterruptibleVoiceLoop(config, router, output)
+
+    def _run_pipeline() -> None:
+        try:
+            pipeline.run()
+        except Exception as exc:
+            pipeline_error.append(exc)
+            logger.exception("voice loop failed")
+
+    pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="voice-loop")
+    pipeline_thread.start()
+    logger.info(
+        "voice loop listening (wake word: %r, active agent: %s)",
+        config.wake_word.phrase,
+        active_name,
+    )
+    return pipeline, pipeline_thread, pool, fleet, pipeline_error
+
+
+def run(config: Config) -> None:
+    """The daemon main loop, in the current process (foreground mode uses
+    this directly; `start` runs it in a detached child)."""
+    existing = read_pid(config)
+    if existing is not None and existing != os.getpid():
+        raise RuntimeError(f"daemon already running (pid {existing})")
+
+    _configure_logging(config)
 
     pid_file = _pid_path(config)
     ready_file = _ready_path(config)
@@ -205,7 +287,7 @@ def run(config: Config) -> None:
 
     pipeline = None
     pipeline_thread = None
-    pipeline_error: BaseException | None = None
+    pipeline_error: list[BaseException] = []
     fleet = None
     pool = None
     # SIGUSR1 is the push-to-interrupt escape hatch (`earshot interrupt`).
@@ -214,52 +296,7 @@ def run(config: Config) -> None:
     # running without a wake model.
     signal.signal(signal.SIGUSR1, lambda *_: pipeline and pipeline.request_interrupt())
     if config.wake_word.model_path:
-        from earshot.agents import first_agent
-        from earshot.barge import InterruptibleVoiceLoop
-        from earshot.conductor import Fleet
-        from earshot.output import OutputPipeline
-
-        # Single-agent operation is the degenerate case of a one-agent
-        # fleet: one code path from Phase 1 through 16 agents.
-        fleet = Fleet(config)
-        fleet.start_all()
-        active_name, _ = first_agent(config)
-        active = fleet.get(active_name)
-        if active.status == "dead":
-            raise RuntimeError(f"the active agent {active_name!r} failed to start")
-        # Watchers run every turn and never restart agents themselves, so
-        # the supervisor owns restarts for the whole fleet, active included.
-        fleet.start_supervision()
-
-        from earshot.conductor import Router, WatcherPool
-
-        output = OutputPipeline(config)
-        pool = WatcherPool(fleet, output)
-        router = Router(
-            fleet,
-            output,
-            read_response=pool.latest_response_text,
-            fleet_status=pool.status_line,
-            dispatch=pool.dispatch,
-        )
-        pool.set_active_probe(lambda name: router.active_agent == name)
-        pipeline = InterruptibleVoiceLoop(config, router, output)
-
-        def _run_pipeline() -> None:
-            nonlocal pipeline_error
-            try:
-                pipeline.run()
-            except Exception as exc:
-                pipeline_error = exc
-                logger.exception("voice loop failed")
-
-        pipeline_thread = threading.Thread(target=_run_pipeline, daemon=True, name="voice-loop")
-        pipeline_thread.start()
-        logger.info(
-            "voice loop listening (wake word: %r, active agent: %s)",
-            config.wake_word.phrase,
-            active_name,
-        )
+        pipeline, pipeline_thread, pool, fleet, pipeline_error = _start_voice_runtime(config)
     else:
         logger.info("voice loop disabled (wake_word.model_path is not set)")
 
@@ -267,27 +304,9 @@ def run(config: Config) -> None:
 
     try:
         while not stopping:
-            if pipeline_error is not None:
-                raise RuntimeError("input pipeline failed") from pipeline_error
+            if pipeline_error:
+                raise RuntimeError("input pipeline failed") from pipeline_error[0]
             time.sleep(0.2)
     finally:
-        if pipeline is not None:
-            pipeline.stop()
-            pipeline_thread.join(timeout=5)
-        if pool is not None:
-            pool.stop()
-        if fleet is not None:
-            fleet.stop_all()
-        # Only remove the PID file this process owns; never clobber a file
-        # that another daemon has since written.
-        try:
-            if pid_file.read_text().strip() == str(os.getpid()):
-                pid_file.unlink()
-        except (FileNotFoundError, ValueError):
-            pass
-        try:
-            if ready_file.read_text().strip() == str(os.getpid()):
-                ready_file.unlink()
-        except (FileNotFoundError, ValueError):
-            pass
+        _stop_runtime(pipeline, pipeline_thread, pool, fleet, pid_file, ready_file)
         logger.info("earshot daemon stopped")

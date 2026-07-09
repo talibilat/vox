@@ -45,63 +45,79 @@ def _summarize_code(content: str, info: str) -> str:
 
 def _render_inline(token: Token) -> str:
     """Flatten an inline token: keep text, drop markup, voice link text only."""
-    out: list[str] = []
-    for child in token.children or []:
-        if child.type == "text":
-            out.append(child.content)
-        elif child.type == "code_inline":
-            out.append(child.content)
-        elif child.type in ("softbreak", "hardbreak"):
-            out.append(" ")
-        elif child.type == "image":
-            alt = child.content or "an image"
-            out.append(alt)
-        # link_open/link_close, strong/em markers: drop, their text children
-        # already flow through as plain "text" tokens.
-    return "".join(out)
+    return "".join(_inline_child_text(child) for child in token.children or [])
+
+
+def _inline_child_text(child: Token) -> str:
+    if child.type in ("text", "code_inline"):
+        return child.content
+    if child.type in ("softbreak", "hardbreak"):
+        return " "
+    if child.type == "image":
+        return child.content or "an image"
+    # link_open/link_close, strong/em markers: drop, their text children
+    # already flow through as plain "text" tokens.
+    return ""
+
+
+def _append_inline(parts: list[str], token: Token) -> None:
+    text = _render_inline(token).strip()
+    if text:
+        parts.append(text)
+
+
+def _sentence_last(parts: list[str]) -> None:
+    if parts:
+        parts[-1] = _sentence(parts[-1])
+
+
+def _comma_last(parts: list[str]) -> None:
+    if parts and parts[-1] and parts[-1][-1] not in ".!?,":
+        parts[-1] = parts[-1] + ","
+
+
+def _append_code_block(parts: list[str], token: Token, code_blocks: str) -> None:
+    if code_blocks == "read":
+        parts.append(_sentence(" ".join(token.content.split())))
+    elif code_blocks == "summarize":
+        parts.append(_summarize_code(token.content, getattr(token, "info", "")))
+    # skip: nothing at all
+
+
+def _handle_ordered_list(parts: list[str], ordered_counters: list[int], token: Token) -> bool:
+    if token.type == "ordered_list_open":
+        ordered_counters.append(int(token.attrGet("start") or 1))
+        return True
+    if token.type == "ordered_list_close":
+        ordered_counters.pop()
+        return True
+    if token.type == "list_item_open" and ordered_counters:
+        parts.append(f"{ordered_counters[-1]}.")
+        ordered_counters[-1] += 1
+        return True
+    return False
+
+
+def _append_structure(parts: list[str], ordered_counters: list[int], token: Token) -> None:
+    if token.type in ("heading_close", "paragraph_close", "tr_close"):
+        _sentence_last(parts)
+    elif token.type in ("th_close", "td_close"):
+        # Separate cells with commas so rows read as natural lists.
+        _comma_last(parts)
+    else:
+        _handle_ordered_list(parts, ordered_counters, token)
 
 
 def _render_tokens(tokens: list[Token], code_blocks: str) -> list[str]:
     parts: list[str] = []
     ordered_counters: list[int] = []
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
+    for token in tokens:
         if token.type in ("fence", "code_block"):
-            if code_blocks == "read":
-                parts.append(_sentence(" ".join(token.content.split())))
-            elif code_blocks == "summarize":
-                parts.append(_summarize_code(token.content, getattr(token, "info", "")))
-            # skip: nothing at all
+            _append_code_block(parts, token, code_blocks)
         elif token.type == "inline":
-            text = _render_inline(token)
-            if text.strip():
-                parts.append(text.strip())
-        elif token.type == "heading_close":
-            # A heading is a sentence of its own; the inline before this
-            # close already emitted its text.
-            if parts:
-                parts[-1] = _sentence(parts[-1])
-        elif token.type == "paragraph_close":
-            if parts:
-                parts[-1] = _sentence(parts[-1])
-        elif token.type == "ordered_list_open":
-            ordered_counters.append(int(token.attrGet("start") or 1))
-        elif token.type == "ordered_list_close":
-            ordered_counters.pop()
-        elif token.type == "list_item_open" and ordered_counters:
-            parts.append(f"{ordered_counters[-1]}.")
-            ordered_counters[-1] += 1
-        elif token.type == "table_close":
-            pass
-        elif token.type == "tr_close":
-            if parts:
-                parts[-1] = _sentence(parts[-1])
-        elif token.type in ("th_close", "td_close"):
-            # Separate cells with commas so rows read as natural lists.
-            if parts and parts[-1] and parts[-1][-1] not in ".!?,":
-                parts[-1] = parts[-1] + ","
-        i += 1
+            _append_inline(parts, token)
+        else:
+            _append_structure(parts, ordered_counters, token)
     # Merge cell fragments: the loop above appends per-inline; join handled
     # by caller, so strip trailing commas at sentence ends.
     return parts
