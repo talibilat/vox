@@ -165,6 +165,21 @@ def stop(config: Config) -> int:
     raise RuntimeError(f"daemon (pid {pid}) did not exit within 10s")
 
 
+def _stop_runtime(pipeline, pipeline_thread, pool, fleet, pid_file: Path, ready_file: Path) -> None:
+    if pipeline is not None:
+        pipeline.stop()
+        if pipeline_thread is not None:
+            pipeline_thread.join(timeout=5)
+    if pool is not None:
+        pool.stop()
+    if fleet is not None:
+        fleet.stop_all()
+    # Only remove files this process owns; never clobber files another daemon
+    # has since written.
+    _unlink_if_matches(pid_file, os.getpid())
+    _unlink_if_matches(ready_file, os.getpid())
+
+
 def run(config: Config) -> None:
     """The daemon main loop, in the current process (foreground mode uses
     this directly; `start` runs it in a detached child)."""
@@ -271,15 +286,5 @@ def run(config: Config) -> None:
                 raise RuntimeError("input pipeline failed") from pipeline_error
             time.sleep(0.2)
     finally:
-        if pipeline is not None:
-            pipeline.stop()
-            pipeline_thread.join(timeout=5)
-        if pool is not None:
-            pool.stop()
-        if fleet is not None:
-            fleet.stop_all()
-        # Only remove the PID file this process owns; never clobber a file
-        # that another daemon has since written.
-        _unlink_if_matches(pid_file, os.getpid())
-        _unlink_if_matches(ready_file, os.getpid())
+        _stop_runtime(pipeline, pipeline_thread, pool, fleet, pid_file, ready_file)
         logger.info("earshot daemon stopped")
