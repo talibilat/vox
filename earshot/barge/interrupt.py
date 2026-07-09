@@ -115,9 +115,7 @@ class InterruptibleVoiceLoop:
                     state = self._enter_responding()
             elif state == RESPONDING:
                 state, buffer = self._continue_responding(frame, buffer)
-        # Source exhausted (tests/replay): flush a recording in progress.
-        if state == RECORDING and buffer and not self._stop.is_set():
-            self._dispatch(np.concatenate(buffer))
+        self._flush_recording_if_needed(state, buffer)
         self._join_responder(timeout=30)
 
     # --- transitions -----------------------------------------------------
@@ -148,6 +146,11 @@ class InterruptibleVoiceLoop:
             logger.info("response finished, back to listening")
             return self._enter_listening(), buffer
         return RESPONDING, buffer
+
+    def _flush_recording_if_needed(self, state: str, buffer: list[np.ndarray]) -> None:
+        # Source exhausted (tests/replay): flush a recording in progress.
+        if state == RECORDING and buffer and not self._stop.is_set():
+            self._dispatch(np.concatenate(buffer))
 
     def _responding(self) -> bool:
         worker_busy = self._responder is not None and self._responder.is_alive()
