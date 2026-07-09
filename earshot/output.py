@@ -88,10 +88,7 @@ class _StreamConverter:
             out.extend(self._close_fence())
         if self._table is not None:
             out.extend(self._close_table())
-        remainder = " ".join([self._held, *self._chunker.flush()]).strip()
-        self._held = ""
-        if remainder:
-            out.extend(self._convert(remainder))
+        out.extend(self._flush_text_run())
         return out
 
     @staticmethod
@@ -150,6 +147,9 @@ class _StreamConverter:
 
     def _end_text_run(self) -> list[str]:
         """A blank line or structural switch ends the open text run."""
+        return self._flush_text_run()
+
+    def _flush_text_run(self) -> list[str]:
         out: list[str] = []
         remainder = " ".join([self._held, *self._chunker.flush()]).strip()
         self._held = ""
