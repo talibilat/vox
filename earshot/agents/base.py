@@ -12,6 +12,7 @@ loop sees markdown text chunks and exceptions, and only those.
 
 from __future__ import annotations
 
+import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 
@@ -19,6 +20,18 @@ from collections.abc import Iterator
 class AgentError(Exception):
     """The agent failed mid-turn: process died, API timed out, or the
     response stream stalled. The message is speakable to the user."""
+
+
+def _stop_process(proc: subprocess.Popen, timeout: float = 10) -> None:
+    """Terminate a child process, escalating to kill if it will not exit."""
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
 
 
 class AgentAdapter(ABC):

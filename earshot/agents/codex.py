@@ -26,7 +26,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from earshot.agents.base import AgentAdapter, AgentError
+from earshot.agents.base import AgentAdapter, AgentError, _stop_process
 from earshot.config import AgentConfig
 
 logger = logging.getLogger("earshot.agents.codex")
@@ -94,13 +94,8 @@ class CodexAdapter(AgentAdapter):
         )
 
     def stop(self) -> None:
-        if self._proc is not None and self._proc.poll() is None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-                self._proc.wait()
+        if self._proc is not None:
+            _stop_process(self._proc)
         self._proc = None
 
     def send(self, prompt: str) -> Iterator[str]:

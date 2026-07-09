@@ -28,7 +28,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from earshot.agents.base import AgentAdapter, AgentError
+from earshot.agents.base import AgentAdapter, AgentError, _stop_process
 from earshot.config import AgentConfig
 
 logger = logging.getLogger("earshot.agents.claude_code")
@@ -62,13 +62,8 @@ class ClaudeCodeAdapter(AgentAdapter):
         self._started = False
         with self._lock:
             proc = self._turn_proc
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+        if proc is not None:
+            _stop_process(proc)
 
     def send(self, prompt: str) -> Iterator[str]:
         if not self._started:
@@ -96,14 +91,14 @@ class ClaudeCodeAdapter(AgentAdapter):
                 proc.stdin.write(json.dumps(message) + "\n")
                 proc.stdin.close()
             except (OSError, ValueError, AttributeError) as exc:
-                self._stop_turn_process(proc)
+                _stop_process(proc)
                 raise AgentError(f"agent {self._name} is not accepting input: {exc}") from exc
             yield from self._stream_turn(proc)
         finally:
             with self._lock:
                 self._turn_proc = None
             if proc.poll() is None:
-                self._stop_turn_process(proc)
+                _stop_process(proc)
 
     # --- internals -----------------------------------------------------
 
@@ -181,13 +176,3 @@ class ClaudeCodeAdapter(AgentAdapter):
                     )
                 return
             yield line.strip()
-
-    def _stop_turn_process(self, proc: subprocess.Popen) -> None:
-        if proc.poll() is not None:
-            return
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
