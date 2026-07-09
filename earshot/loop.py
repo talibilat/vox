@@ -53,20 +53,28 @@ class ConversationLoop:
             self._say("The agent is not responding. Please try again.")
             return
         self._say("The agent stopped. Restarting it now.")
+        if not self._restart_or_say_failure():
+            return
+        self._say("The agent is back, in a fresh session. Repeating your request.")
+        self._retry_request(text)
+
+    def _restart_or_say_failure(self) -> bool:
         try:
             restarted = self._restart() if self._restart is not None else self._restart_adapter()
         except AgentError as restart_error:
             logger.error("agent restart failed: %s", restart_error)
             self._say("I could not restart the agent. Check the logs.")
-            return
+            return False
         except Exception:
             logger.exception("agent restart failed unexpectedly")
             self._say("I could not restart the agent. Check the logs.")
-            return
+            return False
         if not restarted:
             self._say("I could not restart the agent. Check the logs.")
-            return
-        self._say("The agent is back, in a fresh session. Repeating your request.")
+            return False
+        return True
+
+    def _retry_request(self, text: str) -> None:
         try:
             self._speak_response(text)
         except AgentError as retry_error:
