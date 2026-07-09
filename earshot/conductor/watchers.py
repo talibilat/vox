@@ -30,6 +30,30 @@ logger = logging.getLogger("earshot.watchers")
 
 MAX_BUFFERED_RESPONSES = 8  # ring depth per agent
 MAX_RESPONSE_CHARS = 100_000  # per-response cap; 16 chatty agents stay bounded
+TRUNCATED_SUFFIX = " (response truncated)"
+
+
+class _BoundedResponse:
+    def __init__(self) -> None:
+        self._chunks: list[str] = []
+        self._chars = 0
+        self._truncated = False
+
+    def append(self, chunk: str) -> None:
+        if self._chars < MAX_RESPONSE_CHARS:
+            remaining = MAX_RESPONSE_CHARS - self._chars
+            self._chunks.append(chunk[:remaining])
+            self._chars += min(len(chunk), remaining)
+            if len(chunk) > remaining:
+                self._truncated = True
+        else:
+            self._truncated = True
+
+    def text(self) -> str:
+        response = "".join(self._chunks)
+        if self._truncated:
+            response += TRUNCATED_SUFFIX
+        return response
 
 
 class AgentWatcher:
@@ -92,21 +116,11 @@ class AgentWatcher:
                 self._record_failure(error)
 
     def _run_turn(self, command: str) -> None:
-        collected: list[str] = []
-        collected_chars = 0
-        truncated = False
+        response = _BoundedResponse()
 
         def tee():
-            nonlocal collected_chars, truncated
             for chunk in self._record.adapter.send(command):
-                if collected_chars < MAX_RESPONSE_CHARS:
-                    remaining = MAX_RESPONSE_CHARS - collected_chars
-                    collected.append(chunk[:remaining])
-                    collected_chars += min(len(chunk), remaining)
-                    if len(chunk) > remaining:
-                        truncated = True
-                else:
-                    truncated = True
+                response.append(chunk)
                 yield chunk
 
         if self._is_active(self._record.name):
@@ -115,10 +129,7 @@ class AgentWatcher:
         else:
             for _ in tee():
                 pass  # buffer silently; nothing is spoken unprompted
-        response = "".join(collected)
-        if truncated:
-            response += " (response truncated)"
-        self._buffer(response)
+        self._buffer(response.text())
 
     def _record_failure(self, error: Exception) -> None:
         self._buffer(f"The last request failed: {error}")
@@ -128,7 +139,7 @@ class AgentWatcher:
 
     def _buffer(self, response: str) -> None:
         if len(response) > MAX_RESPONSE_CHARS:
-            response = response[:MAX_RESPONSE_CHARS] + " (response truncated)"
+            response = response[:MAX_RESPONSE_CHARS] + TRUNCATED_SUFFIX
         with self._lock:
             self._responses.append(response)
             self._unread = True
