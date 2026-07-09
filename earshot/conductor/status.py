@@ -14,6 +14,11 @@ def _name_list(names: list[str]) -> str:
     return ", ".join(names[:-1]) + f" and {names[-1]}"
 
 
+def _status_part(names: list[str], singular_verb: str, plural_verb: str, phrase: str) -> str:
+    verb = singular_verb if len(names) == 1 else plural_verb
+    return f"{_name_list(names)} {verb} {phrase}"
+
+
 def spoken_status(statuses: dict[str, str]) -> str:
     if not statuses:
         return "No agents are configured."
@@ -23,16 +28,12 @@ def spoken_status(statuses: dict[str, str]) -> str:
 
     parts: list[str] = []
     if finished := groups.get("finished"):
-        verb = "has" if len(finished) == 1 else "have"
-        parts.append(f"{_name_list(finished)} {verb} finished")
+        parts.append(_status_part(finished, "has", "have", "finished"))
     busy = groups.get("busy", []) + groups.get("starting", [])
     if busy:
-        verb = "is" if len(busy) == 1 else "are"
-        parts.append(f"{_name_list(busy)} {verb} still working")
+        parts.append(_status_part(busy, "is", "are", "still working"))
     if idle := groups.get("idle", []) + groups.get("ready", []):
-        verb = "is" if len(idle) == 1 else "are"
-        parts.append(f"{_name_list(idle)} {verb} idle")
+        parts.append(_status_part(idle, "is", "are", "idle"))
     if dead := groups.get("dead"):
-        verb = "is" if len(dead) == 1 else "are"
-        parts.append(f"{_name_list(dead)} {verb} not running")
+        parts.append(_status_part(dead, "is", "are", "not running"))
     return "; ".join(parts) + "."
