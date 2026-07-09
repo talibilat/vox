@@ -106,17 +106,9 @@ class CodexAdapter(AgentAdapter):
             "turn/start",
             {"threadId": self._thread_id, "input": [{"type": "text", "text": prompt}]},
         )
-        while True:
-            try:
-                note = self._notifications.get(timeout=TURN_STALL_TIMEOUT)
-            except queue.Empty:
-                raise AgentError(f"agent {self._name} stalled mid-turn") from None
-            if note is None:  # reader thread saw EOF
-                raise AgentError(f"agent {self._name} died mid-turn")
+        for note in self._turn_notifications():
             method = note.get("method", "")
             params = note.get("params", {})
-            if params.get("threadId") not in (None, self._thread_id):
-                continue
             if method == "item/agentMessage/delta":
                 yield params.get("delta") or ""
             elif method == "turn/completed":
@@ -129,6 +121,18 @@ class CodexAdapter(AgentAdapter):
                 raise AgentError(
                     f"agent {self._name} reported an error: {json.dumps(params)[:200]}"
                 )
+
+    def _turn_notifications(self) -> Iterator[dict]:
+        while True:
+            try:
+                note = self._notifications.get(timeout=TURN_STALL_TIMEOUT)
+            except queue.Empty:
+                raise AgentError(f"agent {self._name} stalled mid-turn") from None
+            if note is None:  # reader thread saw EOF
+                raise AgentError(f"agent {self._name} died mid-turn")
+            params = note.get("params", {})
+            if params.get("threadId") in (None, self._thread_id):
+                yield note
 
     # --- internals -----------------------------------------------------
 
