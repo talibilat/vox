@@ -72,10 +72,10 @@ def _is_earshot_daemon_argv(argv: list[str]) -> bool:
     return command_args == ["run"] or command_args == ["start", "--foreground"]
 
 
-def _unlink_pid_if_matches(pid_file: Path, pid: int) -> None:
+def _unlink_if_matches(path: Path, contents: int | str) -> None:
     try:
-        if pid_file.read_text().strip() == str(pid):
-            pid_file.unlink(missing_ok=True)
+        if path.read_text().strip() == str(contents):
+            path.unlink(missing_ok=True)
     except FileNotFoundError:
         pass
 
@@ -91,12 +91,12 @@ def read_pid(config: Config) -> int | None:
     try:
         os.kill(pid, 0)  # existence check only
     except ProcessLookupError:
-        _unlink_pid_if_matches(pid_file, pid)
+        _unlink_if_matches(pid_file, pid)
         return None
     except PermissionError:
         pass  # process exists; fall through to the identity check
     if not _looks_like_earshot(pid):
-        _unlink_pid_if_matches(pid_file, pid)
+        _unlink_if_matches(pid_file, pid)
         return None
     return pid
 
@@ -280,14 +280,6 @@ def run(config: Config) -> None:
             fleet.stop_all()
         # Only remove the PID file this process owns; never clobber a file
         # that another daemon has since written.
-        try:
-            if pid_file.read_text().strip() == str(os.getpid()):
-                pid_file.unlink()
-        except (FileNotFoundError, ValueError):
-            pass
-        try:
-            if ready_file.read_text().strip() == str(os.getpid()):
-                ready_file.unlink()
-        except (FileNotFoundError, ValueError):
-            pass
+        _unlink_if_matches(pid_file, os.getpid())
+        _unlink_if_matches(ready_file, os.getpid())
         logger.info("earshot daemon stopped")
