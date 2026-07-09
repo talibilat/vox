@@ -170,20 +170,22 @@ class CodexAdapter(AgentAdapter):
         requests.
         """
         for line in stream:
-            line = line.strip()
-            if not line:
+            message = _decode_pump_message(line)
+            if message is None:
                 continue
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if "id" in message and ("result" in message or "error" in message):
-                with self._lock:
-                    waiter = responses.get(message["id"])
-                if waiter is not None:
-                    waiter.put(message)
-            elif "method" in message:
-                notifications.put(message)
+            self._route_pump_message(message, responses, notifications)
+        self._wake_pump_waiters(responses, notifications)
+
+    def _route_pump_message(self, message, responses: dict, notifications: queue.Queue) -> None:
+        if "id" in message and ("result" in message or "error" in message):
+            with self._lock:
+                waiter = responses.get(message["id"])
+            if waiter is not None:
+                waiter.put(message)
+        elif "method" in message:
+            notifications.put(message)
+
+    def _wake_pump_waiters(self, responses: dict, notifications: queue.Queue) -> None:
         # EOF: wake up everything that might be waiting on THIS process.
         with self._lock:
             waiters = list(responses.values())
@@ -198,3 +200,13 @@ class CodexAdapter(AgentAdapter):
                     return
         except queue.Empty:
             pass
+
+
+def _decode_pump_message(line: str):
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None
