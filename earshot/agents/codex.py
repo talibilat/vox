@@ -89,20 +89,26 @@ class CodexAdapter(AgentAdapter):
             {"threadId": self._thread_id, "input": [{"type": "text", "text": prompt}]},
         )
         for note in self._turn_notifications():
-            method = note.get("method", "")
-            params = note.get("params", {})
-            if method == "item/agentMessage/delta":
-                yield params.get("delta") or ""
-            elif method == "turn/completed":
-                turn = params.get("turn", {})
-                error = turn.get("error")
-                if error or turn.get("status") == "failed":
-                    raise AgentError(f"agent {self._name} reported an error: {str(error)[:200]}")
+            done, delta = self._handle_turn_notification(note)
+            if delta is not None:
+                yield delta
+            if done:
                 return
-            elif method == "error":
-                raise AgentError(
-                    f"agent {self._name} reported an error: {json.dumps(params)[:200]}"
-                )
+
+    def _handle_turn_notification(self, note: dict) -> tuple[bool, str | None]:
+        method = note.get("method", "")
+        params = note.get("params", {})
+        if method == "item/agentMessage/delta":
+            return False, params.get("delta") or ""
+        if method == "turn/completed":
+            turn = params.get("turn", {})
+            error = turn.get("error")
+            if error or turn.get("status") == "failed":
+                raise AgentError(f"agent {self._name} reported an error: {str(error)[:200]}")
+            return True, None
+        if method == "error":
+            raise AgentError(f"agent {self._name} reported an error: {json.dumps(params)[:200]}")
+        return False, None
 
     def _turn_notifications(self) -> Iterator[dict]:
         while True:
