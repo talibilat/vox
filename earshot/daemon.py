@@ -110,18 +110,37 @@ def start(config: Config, config_path: str | None) -> int:
     ready_file.unlink(missing_ok=True)
     log_file = _log_path(config)
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "earshot.cli"]
-    if config_path:
-        cmd += ["--config", config_path]
-    cmd += ["run"]
     with open(log_file, "ab") as log:
         proc = subprocess.Popen(
-            cmd,
+            _daemon_command(config_path),
             stdout=log,
             stderr=log,
             stdin=subprocess.DEVNULL,
             start_new_session=True,  # survive the parent's terminal
         )
+    return _wait_until_ready(config, proc, ready_file, log_file)
+
+
+def _daemon_command(config_path: str | None) -> list[str]:
+    cmd = [sys.executable, "-m", "earshot.cli"]
+    if config_path:
+        cmd += ["--config", config_path]
+    return cmd + ["run"]
+
+
+def _ready_pid(ready_file: Path) -> int | None:
+    try:
+        return int(ready_file.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _wait_until_ready(
+    config: Config,
+    proc: subprocess.Popen,
+    ready_file: Path,
+    log_file: Path,
+) -> int:
     # The child writes its ready file after startup completes so `start` only
     # returns once the daemon can handle work.
     deadline = time.time() + START_READY_TIMEOUT_SECONDS
@@ -130,12 +149,8 @@ def start(config: Config, config_path: str | None) -> int:
             raise RuntimeError(
                 f"daemon exited immediately (exit code {proc.returncode}); see {log_file}"
             )
-        if read_pid(config) == proc.pid:
-            try:
-                if int(ready_file.read_text().strip()) == proc.pid:
-                    return proc.pid
-            except (FileNotFoundError, ValueError):
-                pass
+        if read_pid(config) == proc.pid and _ready_pid(ready_file) == proc.pid:
+            return proc.pid
         time.sleep(0.05)
     raise RuntimeError(
         f"daemon did not report ready within {START_READY_TIMEOUT_SECONDS}s; see {log_file}"
