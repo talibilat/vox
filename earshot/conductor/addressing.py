@@ -45,16 +45,7 @@ def _similarity(candidate: str, name: str) -> float:
     return 0.6 * text_score + 0.4 * skeleton_score
 
 
-def extract_address(utterance: str, names: list[str]) -> Address:
-    """Split an utterance into (addressed agent, command, confidence).
-
-    Tries the leading 1..N words (N sized by each name's own word count)
-    against every configured name and keeps the best score.
-    """
-    words = utterance.split()
-    if not words or not names:
-        return Address(None, utterance.strip(), 0.0)
-
+def _best_leading_match(words: list[str], names: list[str]) -> tuple[str | None, float, int]:
     best_name = None
     best_score = 0.0
     best_consumed = 0
@@ -67,7 +58,20 @@ def extract_address(utterance: str, names: list[str]) -> Address:
             score = _similarity(candidate, name)
             if score > best_score:
                 best_name, best_score, best_consumed = name, score, consumed
+    return best_name, best_score, best_consumed
 
+
+def extract_address(utterance: str, names: list[str]) -> Address:
+    """Split an utterance into (addressed agent, command, confidence).
+
+    Tries the leading 1..N words (N sized by each name's own word count)
+    against every configured name and keeps the best score.
+    """
+    words = utterance.split()
+    if not words or not names:
+        return Address(None, utterance.strip(), 0.0)
+
+    best_name, best_score, best_consumed = _best_leading_match(words, names)
     if best_score < CLARIFY_THRESHOLD:
         return Address(None, utterance.strip(), best_score)
     command = " ".join(words[best_consumed:]).lstrip(",.;:").strip()
