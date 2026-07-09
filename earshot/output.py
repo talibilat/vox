@@ -111,6 +111,9 @@ class _StreamConverter:
             out = self._end_text_run()
             self._table = [line]
             return out
+        return self._line_as_text_or_table_header(line, unfed)
+
+    def _line_as_text_or_table_header(self, line: str, unfed: str) -> list[str]:
         if self._pending_table_header is not None:
             return self._line_after_pending_table_header(line)
         if "|" in line:
