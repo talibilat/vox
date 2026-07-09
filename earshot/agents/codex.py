@@ -65,27 +65,9 @@ class CodexAdapter(AgentAdapter):
         except OSError as exc:
             raise AgentError(f"could not launch agent {self._name}: {exc}") from exc
         try:
-            # Fresh per-process state: a previous (dead) process's reader
-            # thread wakes on EOF asynchronously and poisons every waiter it
-            # can see with a "died" sentinel; giving each process its own
-            # dict and queue makes that EOF harmless after a restart.
-            self._responses = {}
-            self._notifications = queue.Queue()
-            self._reader = threading.Thread(
-                target=self._pump,
-                args=(self._proc.stdout, self._responses, self._notifications),
-                daemon=True,
-                name=f"codex-{self._name}",
-            )
-            self._reader.start()
+            self._start_reader()
             self._request("initialize", {"clientInfo": {"name": "earshot", "version": "0.1"}})
-            params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
-            if self._config.model:
-                params["model"] = self._config.model
-            result = self._request("thread/start", params)
-            self._thread_id = result.get("thread", {}).get("id") or result.get("threadId")
-            if not self._thread_id:
-                raise AgentError(f"agent {self._name} did not return a thread id")
+            self._thread_id = self._start_thread()
         except Exception:
             self.stop()
             raise
@@ -161,6 +143,29 @@ class CodexAdapter(AgentAdapter):
                 f"agent {self._name} rejected {method}: {json.dumps(response['error'])[:200]}"
             )
         return response.get("result", {})
+
+    def _start_reader(self) -> None:
+        # Fresh per-process state: a previous dead process's reader wakes on EOF
+        # asynchronously, so give each process its own waiters and notifications.
+        self._responses = {}
+        self._notifications = queue.Queue()
+        self._reader = threading.Thread(
+            target=self._pump,
+            args=(self._proc.stdout, self._responses, self._notifications),
+            daemon=True,
+            name=f"codex-{self._name}",
+        )
+        self._reader.start()
+
+    def _start_thread(self) -> str:
+        params: dict = {"cwd": str(Path(self._config.workdir).expanduser())}
+        if self._config.model:
+            params["model"] = self._config.model
+        result = self._request("thread/start", params)
+        thread_id = result.get("thread", {}).get("id") or result.get("threadId")
+        if not thread_id:
+            raise AgentError(f"agent {self._name} did not return a thread id")
+        return thread_id
 
     def _pump(self, stream, responses: dict, notifications: queue.Queue) -> None:
         """Reader thread: route responses to callers, notifications to send().
