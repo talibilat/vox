@@ -147,19 +147,24 @@ class Player:
             if chunk is None:
                 return
             if self._interrupt.is_set():
-                if self._queue.empty():
-                    self._idle.set()
+                self._mark_idle_if_drained()
                 continue
-            for start in range(0, len(chunk), _SLICE):
-                if self._interrupt.is_set():
-                    break
-                try:
-                    self._sink.write(chunk[start : start + _SLICE])
-                except Exception:
-                    # The worker must survive sink failures: a dead worker
-                    # would leave every stop_and_flush waiting on its idle
-                    # timeout. Drop the rest of this chunk and carry on.
-                    logger.exception("audio sink write failed; dropping chunk")
-                    break
-            if self._queue.empty():
-                self._idle.set()
+            self._play_chunk(chunk)
+            self._mark_idle_if_drained()
+
+    def _play_chunk(self, chunk: np.ndarray) -> None:
+        for start in range(0, len(chunk), _SLICE):
+            if self._interrupt.is_set():
+                break
+            try:
+                self._sink.write(chunk[start : start + _SLICE])
+            except Exception:
+                # The worker must survive sink failures: a dead worker
+                # would leave every stop_and_flush waiting on its idle
+                # timeout. Drop the rest of this chunk and carry on.
+                logger.exception("audio sink write failed; dropping chunk")
+                break
+
+    def _mark_idle_if_drained(self) -> None:
+        if self._queue.empty():
+            self._idle.set()
