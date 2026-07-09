@@ -34,6 +34,20 @@ READY_TIMEOUT = 30.0
 TURN_STALL_TIMEOUT = 120.0  # max quiet time mid-turn before we call it stalled
 
 
+def _decode_sse_event(raw_line: bytes) -> tuple[bool, dict | None]:
+    line = raw_line.decode("utf-8", "replace").strip()
+    if not line.startswith("data: "):
+        return False, None
+    try:
+        return True, json.loads(line[6:])
+    except json.JSONDecodeError:
+        return True, None
+
+
+def _event_payload(event: dict) -> dict:
+    return event.get("data") or event.get("properties") or {}
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -153,6 +167,13 @@ class OpencodeAdapter(AgentAdapter):
                 f"could not open the event stream for agent {self._name}: {exc}"
             ) from exc
 
+    def _payload_for_session(self, event: dict) -> dict | None:
+        payload = _event_payload(event)
+        session = payload.get("sessionID") or (event.get("durable") or {}).get("aggregateID")
+        if session and session != self._session_id:
+            return None
+        return payload
+
     def _stream_turn(self, events) -> Iterator[str]:
         """Yield text deltas for our session until the final step ends."""
         progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
@@ -160,20 +181,15 @@ class OpencodeAdapter(AgentAdapter):
             for raw_line in events:
                 if time.monotonic() >= progress_deadline:
                     raise AgentError(f"agent {self._name} stalled mid-turn")
-                line = raw_line.decode("utf-8", "replace").strip()
-                if not line.startswith("data: "):
+                is_data_line, event = _decode_sse_event(raw_line)
+                if not is_data_line:
                     if not self.alive:
                         raise AgentError(f"agent {self._name} died mid-turn")
                     continue
-                try:
-                    event = json.loads(line[6:])
-                except json.JSONDecodeError:
+                if event is None:
                     continue
-                payload = event.get("data") or event.get("properties") or {}
-                session = payload.get("sessionID") or (event.get("durable") or {}).get(
-                    "aggregateID"
-                )
-                if session and session != self._session_id:
+                payload = self._payload_for_session(event)
+                if payload is None:
                     continue
                 etype = event.get("type", "")
                 if etype == "session.next.text.delta":
