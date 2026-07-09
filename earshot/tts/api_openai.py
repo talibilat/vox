@@ -17,6 +17,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from earshot.api_fallback import get_or_create_fallback
 from earshot.stt.api_openai import BackendUnavailable, read_api_key
 from earshot.tts.base import TtsBackend
 
@@ -110,10 +111,10 @@ class ApiTtsBackend(TtsBackend):
                 yield resampled.clip(-32768, 32767).astype(np.int16)
 
     def _get_fallback(self) -> TtsBackend | None:
-        if self._fallback is None and self._fallback_factory is not None:
-            try:
-                self._fallback = self._fallback_factory()
-            except Exception:
-                logger.exception("could not create the local TTS fallback")
-                self._fallback_factory = None
+        self._fallback, self._fallback_factory = get_or_create_fallback(
+            self._fallback,
+            self._fallback_factory,
+            logger,
+            "TTS",
+        )
         return self._fallback
