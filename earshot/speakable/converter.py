@@ -77,34 +77,52 @@ def _comma_last(parts: list[str]) -> None:
         parts[-1] = parts[-1] + ","
 
 
+def _append_code_block(parts: list[str], token: Token, code_blocks: str) -> None:
+    if code_blocks == "read":
+        parts.append(_sentence(" ".join(token.content.split())))
+    elif code_blocks == "summarize":
+        parts.append(_summarize_code(token.content, getattr(token, "info", "")))
+    # skip: nothing at all
+
+
+def _handle_ordered_list(
+    parts: list[str], ordered_counters: list[int], token: Token
+) -> bool:
+    if token.type == "ordered_list_open":
+        ordered_counters.append(int(token.attrGet("start") or 1))
+        return True
+    if token.type == "ordered_list_close":
+        ordered_counters.pop()
+        return True
+    if token.type == "list_item_open" and ordered_counters:
+        parts.append(f"{ordered_counters[-1]}.")
+        ordered_counters[-1] += 1
+        return True
+    return False
+
+
+def _append_structure(
+    parts: list[str], ordered_counters: list[int], token: Token
+) -> None:
+    if token.type in ("heading_close", "paragraph_close", "tr_close"):
+        _sentence_last(parts)
+    elif token.type in ("th_close", "td_close"):
+        # Separate cells with commas so rows read as natural lists.
+        _comma_last(parts)
+    else:
+        _handle_ordered_list(parts, ordered_counters, token)
+
+
 def _render_tokens(tokens: list[Token], code_blocks: str) -> list[str]:
     parts: list[str] = []
     ordered_counters: list[int] = []
     for token in tokens:
         if token.type in ("fence", "code_block"):
-            if code_blocks == "read":
-                parts.append(_sentence(" ".join(token.content.split())))
-            elif code_blocks == "summarize":
-                parts.append(_summarize_code(token.content, getattr(token, "info", "")))
-            # skip: nothing at all
+            _append_code_block(parts, token, code_blocks)
         elif token.type == "inline":
             _append_inline(parts, token)
-        elif token.type in ("heading_close", "paragraph_close"):
-            # A heading is a sentence of its own; the inline before the close
-            # already emitted its text.
-            _sentence_last(parts)
-        elif token.type == "ordered_list_open":
-            ordered_counters.append(int(token.attrGet("start") or 1))
-        elif token.type == "ordered_list_close":
-            ordered_counters.pop()
-        elif token.type == "list_item_open" and ordered_counters:
-            parts.append(f"{ordered_counters[-1]}.")
-            ordered_counters[-1] += 1
-        elif token.type == "tr_close":
-            _sentence_last(parts)
-        elif token.type in ("th_close", "td_close"):
-            # Separate cells with commas so rows read as natural lists.
-            _comma_last(parts)
+        else:
+            _append_structure(parts, ordered_counters, token)
     # Merge cell fragments: the loop above appends per-inline; join handled
     # by caller, so strip trailing commas at sentence ends.
     return parts
