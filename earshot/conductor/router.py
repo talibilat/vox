@@ -89,26 +89,11 @@ class Router:
             return
         address = extract_address(utterance, names)
         if address.name and address.confidence >= ROUTE_THRESHOLD:
-            if not address.command:
-                self._switch_active(address.name)
-                self.say(f"{address.name} is listening.")
-                return
-            if self._is_read_request(address.command):
-                self._speak_response_of(address.name)
-                return
-            self._route(address.name, address.command)
+            self._handle_confirmed_address(address.name, address.command)
         elif address.name:  # ambiguous: clarify aloud, never silently misroute
-            self._pending = (address.name, address.command)
-            logger.info("ambiguous address (%.2f) for %r; asking", address.confidence, address.name)
-            self.say(f"Did you mean {address.name}?")
+            self._ask_for_clarification(address.name, address.command, address.confidence)
         else:
-            if self._is_read_request(utterance):
-                self._speak_response_of(self._active)
-                return
-            if self._active is None:
-                self.say("No agents are configured.")
-                return
-            self._route(self._active, utterance)
+            self._route_unaddressed(utterance)
 
     def say(self, sentence: str) -> None:
         """Speak a status sentence; never raises into the voice loop."""
@@ -131,6 +116,30 @@ class Router:
                 self.say(f"{name} is listening.")
             return True
         return False  # not a confirmation: fall through and route normally
+
+    def _handle_confirmed_address(self, name: str, command: str) -> None:
+        if not command:
+            self._switch_active(name)
+            self.say(f"{name} is listening.")
+            return
+        if self._is_read_request(command):
+            self._speak_response_of(name)
+            return
+        self._route(name, command)
+
+    def _ask_for_clarification(self, name: str, command: str, confidence: float) -> None:
+        self._pending = (name, command)
+        logger.info("ambiguous address (%.2f) for %r; asking", confidence, name)
+        self.say(f"Did you mean {name}?")
+
+    def _route_unaddressed(self, utterance: str) -> None:
+        if self._is_read_request(utterance):
+            self._speak_response_of(self._active)
+            return
+        if self._active is None:
+            self.say("No agents are configured.")
+            return
+        self._route(self._active, utterance)
 
     def _route(self, name: str, command: str) -> None:
         try:
