@@ -83,6 +83,9 @@ class Router:
             return
         if self._pending is not None and self._resolve_pending(utterance):
             return
+        self._route_agent_utterance(utterance)
+
+    def _route_agent_utterance(self, utterance: str) -> None:
         names = self._fleet.registry.names()
         if len(names) == 1:
             self._route(names[0], utterance)
