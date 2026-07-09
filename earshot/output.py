@@ -100,10 +100,7 @@ class _StreamConverter:
         unfed = line[self._fed :]
         self._fed = 0
         if self._fence is not None:
-            self._fence.append(line)
-            if _FENCE.match(line):
-                return self._close_fence()
-            return []
+            return self._line_in_fence(line)
         if _FENCE.match(line):
             out = self._end_text_run()
             self._fence = [line]
@@ -122,6 +119,12 @@ class _StreamConverter:
         if not line.strip():
             return self._end_text_run()
         return self._stream_text(unfed + "\n")
+
+    def _line_in_fence(self, line: str) -> list[str]:
+        self._fence.append(line)
+        if _FENCE.match(line):
+            return self._close_fence()
+        return []
 
     def _line_in_table(self, line: str) -> list[str]:
         if "|" in line:
