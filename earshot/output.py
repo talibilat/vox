@@ -109,32 +109,38 @@ class _StreamConverter:
             self._fence = [line]
             return out
         if self._table is not None:
-            if "|" in line:
-                self._table.append(line)
-                return []
-            out = self._close_table()
-            out.extend(self._line(line))
-            return out
+            return self._line_in_table(line)
         if _TABLE_LEADING_PIPE.match(line):
             out = self._end_text_run()
             self._table = [line]
             return out
         if self._pending_table_header is not None:
-            header = self._pending_table_header
-            self._pending_table_header = None
-            if _TABLE_SEPARATOR.match(line):
-                out = self._end_text_run()
-                self._table = [header, line]
-                return out
-            out = self._stream_text(header + "\n")
-            out.extend(self._line(line))
-            return out
+            return self._line_after_pending_table_header(line)
         if "|" in line:
             self._pending_table_header = line
             return []
         if not line.strip():
             return self._end_text_run()
         return self._stream_text(unfed + "\n")
+
+    def _line_in_table(self, line: str) -> list[str]:
+        if "|" in line:
+            self._table.append(line)
+            return []
+        out = self._close_table()
+        out.extend(self._line(line))
+        return out
+
+    def _line_after_pending_table_header(self, line: str) -> list[str]:
+        header = self._pending_table_header
+        self._pending_table_header = None
+        if _TABLE_SEPARATOR.match(line):
+            out = self._end_text_run()
+            self._table = [header, line]
+            return out
+        out = self._stream_text(header + "\n")
+        out.extend(self._line(line))
+        return out
 
     def _stream_text(self, text: str) -> list[str]:
         out: list[str] = []
