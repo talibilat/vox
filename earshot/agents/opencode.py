@@ -174,6 +174,21 @@ class OpencodeAdapter(AgentAdapter):
             return None
         return payload
 
+    def _handle_turn_event(self, event: dict, payload: dict) -> tuple[str | None, bool, bool]:
+        etype = event.get("type", "")
+        if etype == "session.next.text.delta":
+            return payload.get("delta") or "", False, True
+        if etype in ("session.error", "session.next.step.failed"):
+            raise AgentError(f"agent {self._name} reported an error: {json.dumps(payload)[:200]}")
+        if etype == "session.next.step.ended":
+            finish = payload.get("finish")
+            if finish == "stop":
+                return None, True, True
+            if finish not in (None, "tool-calls"):
+                raise AgentError(f"agent {self._name} turn ended abnormally ({finish})")
+            return None, False, True
+        return None, False, False
+
     def _stream_turn(self, events) -> Iterator[str]:
         """Yield text deltas for our session until the final step ends."""
         progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
@@ -191,21 +206,13 @@ class OpencodeAdapter(AgentAdapter):
                 payload = self._payload_for_session(event)
                 if payload is None:
                     continue
-                etype = event.get("type", "")
-                if etype == "session.next.text.delta":
+                delta, done, made_progress = self._handle_turn_event(event, payload)
+                if made_progress:
                     progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
-                    yield payload.get("delta") or ""
-                elif etype in ("session.error", "session.next.step.failed"):
-                    raise AgentError(
-                        f"agent {self._name} reported an error: {json.dumps(payload)[:200]}"
-                    )
-                elif etype == "session.next.step.ended":
-                    progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
-                    finish = payload.get("finish")
-                    if finish == "stop":
-                        return
-                    if finish not in (None, "tool-calls"):
-                        raise AgentError(f"agent {self._name} turn ended abnormally ({finish})")
+                if delta is not None:
+                    yield delta
+                if done:
+                    return
         except TimeoutError as exc:
             raise AgentError(f"agent {self._name} stalled mid-turn") from exc
         except OSError as exc:
