@@ -61,6 +61,17 @@ def _fresh_line_start(before_lines: list[str], after_lines: list[str]) -> int:
     return 0
 
 
+def _stable_wait_state(
+    before: str, current: str, stable_since: float | None
+) -> tuple[float | None, bool]:
+    if current == before:
+        return stable_since, False
+    now = time.time()
+    if stable_since is None:
+        return now, False
+    return stable_since, now - stable_since >= STABLE_SECONDS
+
+
 class TmuxAgentAdapter(AgentAdapter):
     def __init__(self, name: str, config: AgentConfig):
         if shutil.which("tmux") is None:
@@ -175,11 +186,8 @@ class TmuxAgentAdapter(AgentAdapter):
                 if chunk:
                     yield chunk
                 continue
-            if current == before:
-                continue  # nothing has happened yet
-            if stable_since is None:
-                stable_since = time.time()
-            elif time.time() - stable_since >= STABLE_SECONDS:
+            stable_since, is_stable = _stable_wait_state(before, current, stable_since)
+            if is_stable:
                 return
         raise AgentError(f"agent {self._name} stalled mid-turn")
 
