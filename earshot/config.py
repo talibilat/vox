@@ -218,6 +218,16 @@ def _check_range(value: object, low: float, high: float, path: str) -> None:
         _fail(path, f"expected a value between {low} and {high}, got {value}")
 
 
+def _check_min_int(value: object, minimum: int, path: str) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        _fail(path, f"expected an integer >= {minimum}, got {value!r}")
+
+
+def _check_positive_number(value: object, path: str) -> None:
+    if not isinstance(value, int | float) or isinstance(value, bool) or value <= 0:
+        _fail(path, f"expected a number > 0, got {value!r}")
+
+
 def _check_str(value: object, path: str, optional: bool = False) -> None:
     if optional and value is None:
         return
@@ -269,12 +279,7 @@ def validate(config: Config) -> Config:
     _check_str(config.wake_word.phrase, "wake_word.phrase")
     _check_str(config.wake_word.model_path, "wake_word.model_path", optional=True)
     _check_range(config.wake_word.sensitivity, 0.0, 1.0, "wake_word.sensitivity")
-    if (
-        not isinstance(config.wake_word.patience, int)
-        or isinstance(config.wake_word.patience, bool)
-        or config.wake_word.patience < 1
-    ):
-        _fail("wake_word.patience", f"expected an integer >= 1, got {config.wake_word.patience!r}")
+    _check_min_int(config.wake_word.patience, 1, "wake_word.patience")
 
     _check_enum(config.stt.backend, BACKENDS, "stt.backend")
     _check_str(config.stt.local.model, "stt.local.model")
@@ -288,12 +293,7 @@ def validate(config: Config) -> Config:
     _check_enum(config.tts.backend, BACKENDS, "tts.backend")
     _check_enum(config.tts.local.engine, TTS_ENGINES, "tts.local.engine")
     _check_str(config.tts.local.voice, "tts.local.voice")
-    if (
-        not isinstance(config.tts.local.speed, int | float)
-        or isinstance(config.tts.local.speed, bool)
-        or config.tts.local.speed <= 0
-    ):
-        _fail("tts.local.speed", f"expected a number > 0, got {config.tts.local.speed!r}")
+    _check_positive_number(config.tts.local.speed, "tts.local.speed")
     _check_str(config.tts.api.base_url, "tts.api.base_url")
     _check_str(config.tts.api.api_key_env, "tts.api.api_key_env")
     _check_str(config.tts.api.model, "tts.api.model")
