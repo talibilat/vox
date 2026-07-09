@@ -189,6 +189,19 @@ class OpencodeAdapter(AgentAdapter):
             return None, False, True
         return None, False, False
 
+    def _session_event(self, raw_line: bytes) -> tuple[dict, dict] | None:
+        is_data_line, event = _decode_sse_event(raw_line)
+        if not is_data_line:
+            if not self.alive:
+                raise AgentError(f"agent {self._name} died mid-turn")
+            return None
+        if event is None:
+            return None
+        payload = self._payload_for_session(event)
+        if payload is None:
+            return None
+        return event, payload
+
     def _stream_turn(self, events) -> Iterator[str]:
         """Yield text deltas for our session until the final step ends."""
         progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
@@ -196,16 +209,10 @@ class OpencodeAdapter(AgentAdapter):
             for raw_line in events:
                 if time.monotonic() >= progress_deadline:
                     raise AgentError(f"agent {self._name} stalled mid-turn")
-                is_data_line, event = _decode_sse_event(raw_line)
-                if not is_data_line:
-                    if not self.alive:
-                        raise AgentError(f"agent {self._name} died mid-turn")
+                session_event = self._session_event(raw_line)
+                if session_event is None:
                     continue
-                if event is None:
-                    continue
-                payload = self._payload_for_session(event)
-                if payload is None:
-                    continue
+                event, payload = session_event
                 delta, done, made_progress = self._handle_turn_event(event, payload)
                 if made_progress:
                     progress_deadline = time.monotonic() + TURN_STALL_TIMEOUT
