@@ -45,20 +45,19 @@ def _summarize_code(content: str, info: str) -> str:
 
 def _render_inline(token: Token) -> str:
     """Flatten an inline token: keep text, drop markup, voice link text only."""
-    out: list[str] = []
-    for child in token.children or []:
-        if child.type == "text":
-            out.append(child.content)
-        elif child.type == "code_inline":
-            out.append(child.content)
-        elif child.type in ("softbreak", "hardbreak"):
-            out.append(" ")
-        elif child.type == "image":
-            alt = child.content or "an image"
-            out.append(alt)
-        # link_open/link_close, strong/em markers: drop, their text children
-        # already flow through as plain "text" tokens.
-    return "".join(out)
+    return "".join(_inline_child_text(child) for child in token.children or [])
+
+
+def _inline_child_text(child: Token) -> str:
+    if child.type in ("text", "code_inline"):
+        return child.content
+    if child.type in ("softbreak", "hardbreak"):
+        return " "
+    if child.type == "image":
+        return child.content or "an image"
+    # link_open/link_close, strong/em markers: drop, their text children
+    # already flow through as plain "text" tokens.
+    return ""
 
 
 def _append_inline(parts: list[str], token: Token) -> None:
