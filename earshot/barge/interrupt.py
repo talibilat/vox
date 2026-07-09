@@ -100,19 +100,9 @@ class InterruptibleVoiceLoop:
             if self._stop.is_set():
                 break
             if state == LISTENING:
-                if self._responding():
-                    # A response is still playing out (e.g. an error message
-                    # after a failed turn); treat it as RESPONDING.
-                    state = self._enter_responding()
-                    continue
-                if self._wake.detected(frame):
-                    logger.info("wake word detected, recording")
-                    state, buffer = self._enter_recording([])
+                state, buffer = self._continue_listening(frame, buffer)
             elif state == RECORDING:
-                buffer.append(frame)
-                if self._end_of_speech.finished(frame):
-                    self._dispatch(np.concatenate(buffer))
-                    state = self._enter_responding()
+                state, buffer = self._continue_recording(frame, buffer)
             elif state == RESPONDING:
                 state, buffer = self._continue_responding(frame, buffer)
         self._flush_recording_if_needed(state, buffer)
@@ -135,6 +125,27 @@ class InterruptibleVoiceLoop:
         self._onset.reset()
         self._interrupt_requested.clear()
         return RESPONDING
+
+    def _continue_listening(
+        self, frame: np.ndarray, buffer: list[np.ndarray]
+    ) -> tuple[str, list[np.ndarray]]:
+        if self._responding():
+            # A response is still playing out (e.g. an error message after a
+            # failed turn); treat it as RESPONDING.
+            return self._enter_responding(), buffer
+        if self._wake.detected(frame):
+            logger.info("wake word detected, recording")
+            return self._enter_recording([])
+        return LISTENING, buffer
+
+    def _continue_recording(
+        self, frame: np.ndarray, buffer: list[np.ndarray]
+    ) -> tuple[str, list[np.ndarray]]:
+        buffer.append(frame)
+        if self._end_of_speech.finished(frame):
+            self._dispatch(np.concatenate(buffer))
+            return self._enter_responding(), buffer
+        return RECORDING, buffer
 
     def _continue_responding(
         self, frame: np.ndarray, buffer: list[np.ndarray]
