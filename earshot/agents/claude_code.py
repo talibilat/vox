@@ -37,6 +37,19 @@ TURN_TIMEOUT = 600.0  # coding turns can run long; the stall guard is per-line
 LINE_STALL_TIMEOUT = 120.0  # max quiet time between output lines
 
 
+def _decode_json_event(line: str) -> dict | None:
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+
+def _assistant_text(event: dict) -> Iterator[str]:
+    for block in event.get("message", {}).get("content", []):
+        if block.get("type") == "text" and block.get("text"):
+            yield block["text"]
+
+
 class ClaudeCodeAdapter(AgentAdapter):
     def __init__(self, name: str, config: AgentConfig):
         self._name = name
@@ -128,30 +141,33 @@ class ClaudeCodeAdapter(AgentAdapter):
 
     def _stream_turn(self, proc: subprocess.Popen) -> Iterator[str]:
         got_result = False
-        for line in self._lines_with_stall_guard(proc):
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        for event in self._turn_events(proc):
             etype = event.get("type")
-            if session := event.get("session_id"):
-                self._session_id = session
             if etype == "assistant":
-                for block in event.get("message", {}).get("content", []):
-                    if block.get("type") == "text" and block.get("text"):
-                        yield block["text"]
+                yield from _assistant_text(event)
             elif etype == "result":
                 got_result = True
-                if event.get("is_error"):
-                    raise AgentError(
-                        f"agent {self._name} reported an error: "
-                        f"{str(event.get('result', ''))[:200]}"
-                    )
+                self._raise_for_result_error(event)
                 break
         exit_code = proc.wait(timeout=10)
         if not got_result:
             raise AgentError(
                 f"agent {self._name} turn ended without a result (exit code {exit_code})"
+            )
+
+    def _turn_events(self, proc: subprocess.Popen) -> Iterator[dict]:
+        for line in self._lines_with_stall_guard(proc):
+            event = _decode_json_event(line)
+            if event is None:
+                continue
+            if session := event.get("session_id"):
+                self._session_id = session
+            yield event
+
+    def _raise_for_result_error(self, event: dict) -> None:
+        if event.get("is_error"):
+            raise AgentError(
+                f"agent {self._name} reported an error: {str(event.get('result', ''))[:200]}"
             )
 
     def _lines_with_stall_guard(self, proc: subprocess.Popen) -> Iterator[str]:
