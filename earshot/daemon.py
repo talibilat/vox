@@ -165,6 +165,20 @@ def stop(config: Config) -> int:
     raise RuntimeError(f"daemon (pid {pid}) did not exit within 10s")
 
 
+def _configure_logging(config: Config) -> None:
+    log_file = _log_path(config)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    handlers: list[logging.Handler] = [logging.FileHandler(log_file)]
+    if sys.stderr.isatty():
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+
+
 def _stop_runtime(pipeline, pipeline_thread, pool, fleet, pid_file: Path, ready_file: Path) -> None:
     if pipeline is not None:
         pipeline.stop()
@@ -187,17 +201,7 @@ def run(config: Config) -> None:
     if existing is not None and existing != os.getpid():
         raise RuntimeError(f"daemon already running (pid {existing})")
 
-    log_file = _log_path(config)
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    handlers: list[logging.Handler] = [logging.FileHandler(log_file)]
-    if sys.stderr.isatty():
-        handlers.append(logging.StreamHandler())
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=handlers,
-        force=True,
-    )
+    _configure_logging(config)
 
     pid_file = _pid_path(config)
     ready_file = _ready_path(config)
