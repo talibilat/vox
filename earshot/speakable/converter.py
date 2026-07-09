@@ -84,9 +84,7 @@ def _append_code_block(parts: list[str], token: Token, code_blocks: str) -> None
     # skip: nothing at all
 
 
-def _handle_ordered_list(
-    parts: list[str], ordered_counters: list[int], token: Token
-) -> bool:
+def _handle_ordered_list(parts: list[str], ordered_counters: list[int], token: Token) -> bool:
     if token.type == "ordered_list_open":
         ordered_counters.append(int(token.attrGet("start") or 1))
         return True
@@ -100,9 +98,7 @@ def _handle_ordered_list(
     return False
 
 
-def _append_structure(
-    parts: list[str], ordered_counters: list[int], token: Token
-) -> None:
+def _append_structure(parts: list[str], ordered_counters: list[int], token: Token) -> None:
     if token.type in ("heading_close", "paragraph_close", "tr_close"):
         _sentence_last(parts)
     elif token.type in ("th_close", "td_close"):
