@@ -114,13 +114,7 @@ class InterruptibleVoiceLoop:
                     self._dispatch(np.concatenate(buffer))
                     state = self._enter_responding()
             elif state == RESPONDING:
-                interrupted = self._interrupt_requested.is_set() or self._onset.onset(frame)
-                if interrupted:
-                    pre_roll = self._interrupt_playback()
-                    state, buffer = self._enter_recording(pre_roll)
-                elif not self._responding():
-                    logger.info("response finished, back to listening")
-                    state = self._enter_listening()
+                state, buffer = self._continue_responding(frame, buffer)
         # Source exhausted (tests/replay): flush a recording in progress.
         if state == RECORDING and buffer and not self._stop.is_set():
             self._dispatch(np.concatenate(buffer))
@@ -143,6 +137,17 @@ class InterruptibleVoiceLoop:
         self._onset.reset()
         self._interrupt_requested.clear()
         return RESPONDING
+
+    def _continue_responding(
+        self, frame: np.ndarray, buffer: list[np.ndarray]
+    ) -> tuple[str, list[np.ndarray]]:
+        interrupted = self._interrupt_requested.is_set() or self._onset.onset(frame)
+        if interrupted:
+            return self._enter_recording(self._interrupt_playback())
+        if not self._responding():
+            logger.info("response finished, back to listening")
+            return self._enter_listening(), buffer
+        return RESPONDING, buffer
 
     def _responding(self) -> bool:
         worker_busy = self._responder is not None and self._responder.is_alive()
