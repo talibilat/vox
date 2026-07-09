@@ -47,6 +47,20 @@ def _strip_ansi(text: str) -> str:
     return _ANSI.sub("", text)
 
 
+def _fresh_line_start(before_lines: list[str], after_lines: list[str]) -> int:
+    common = 0
+    for old, new in zip(before_lines, after_lines, strict=False):
+        if old != new:
+            break
+        common += 1
+    if common:
+        return common
+    for overlap in range(min(len(before_lines), len(after_lines)), 0, -1):
+        if before_lines[-overlap:] == after_lines[:overlap]:
+            return overlap
+    return 0
+
+
 class TmuxAgentAdapter(AgentAdapter):
     def __init__(self, name: str, config: AgentConfig):
         if shutil.which("tmux") is None:
@@ -172,16 +186,7 @@ class TmuxAgentAdapter(AgentAdapter):
     def _extract_response(self, before: str, after: str, prompt: str) -> str:
         before_lines = before.rstrip("\n").splitlines()
         after_lines = after.rstrip("\n").splitlines()
-        common = 0
-        for old, new in zip(before_lines, after_lines, strict=False):
-            if old != new:
-                break
-            common += 1
-        if common == 0:
-            for overlap in range(min(len(before_lines), len(after_lines)), 0, -1):
-                if before_lines[-overlap:] == after_lines[:overlap]:
-                    common = overlap
-                    break
+        common = _fresh_line_start(before_lines, after_lines)
         fresh = [_strip_ansi(line) for line in after_lines[common:]]
         # Drop echoed prompt lines so the user's own words are not read back.
         prompt_lines = {line.strip() for line in prompt.splitlines() if line.strip()}
