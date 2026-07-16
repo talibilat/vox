@@ -48,6 +48,16 @@ agents:
 3. `earshot start`, put on a headset, and say: "Hey Earshot" ... "list the files in this directory and tell me what you see".
 4. Talk over the answer whenever you want to redirect it. `earshot interrupt` is the push-to-interrupt escape hatch (bind it to a system hotkey); `earshot stop` shuts everything down, including every agent process Earshot spawned.
 
+## Everyday commands
+
+| Goal | Say or run |
+| --- | --- |
+| Start Earshot | `earshot start` |
+| Give the active agent an instruction | “Hey Earshot, run the tests and tell me what failed.” |
+| Redirect a spoken answer | Talk over the answer, or run `earshot interrupt` from a shell. |
+| Hear the fleet’s current state | “agent status” |
+| Stop Earshot and its agent processes | `earshot stop` |
+
 ## The fleet (multi-agent)
 
 ```yaml
